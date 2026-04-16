@@ -1617,26 +1617,18 @@ function checkWin(ps){
 function genCode(){const c='ABCDEFGHJKLMNPQRSTUVWXYZ';return Array.from({length:4},()=>c[rnd(c.length)]).join('');}
 
 function makeQR(url,size){
-  const qr=qrcode(0,'M');qr.addData(url);qr.make();
+  const qr=qrcode(0,'H');qr.addData(url);qr.make();
   const count=qr.getModuleCount();
   const cellSize=size/count;
   let svg=`<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">`;
   svg+=`<rect width="${size}" height="${size}" fill="#ffffff" rx="12"/>`;
-  // Center zone to keep clear for logo (30% center)
-  const cStart=Math.floor(count*0.35), cEnd=Math.ceil(count*0.65);
   for(let r=0;r<count;r++){
     for(let c=0;c<count;c++){
       if(qr.isDark(r,c)){
-        const inCenter=r>=cStart&&r<cEnd&&c>=cStart&&c<cEnd;
-        if(!inCenter){
-          svg+=`<rect x="${c*cellSize}" y="${r*cellSize}" width="${cellSize+.5}" height="${cellSize+.5}" fill="#1a1a2e"/>`;
-        }
+        svg+=`<rect x="${c*cellSize}" y="${r*cellSize}" width="${cellSize+.5}" height="${cellSize+.5}" fill="#1a1a2e"/>`;
       }
     }
   }
-  // Logo in center
-  const cx=size/2, cy=size/2, fs=size*0.18;
-  svg+=`<text x="${cx}" y="${cy}" font-size="${fs}" text-anchor="middle" dominant-baseline="central">🕵️</text>`;
   svg+=`</svg>`;
   return svg;
 }
