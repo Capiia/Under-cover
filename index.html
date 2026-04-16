@@ -284,10 +284,74 @@
   </div>
   <div class="sb">
     <div id="hdGroups" style="display:flex;flex-direction:column;gap:.7rem"></div>
-    <button class="add-group-btn" onclick="go('host-new-group')">
-      <span style="font-size:1.5rem">+</span>
-      <span style="font-size:.85rem;font-weight:600">Nouveau groupe</span>
+    <button class="add-group-btn" onclick="go('host-auto-split')">
+      <span style="font-size:1.5rem">👥</span>
+      <span style="font-size:.85rem;font-weight:600">Répartition auto</span>
     </button>
+    <button class="add-group-btn" onclick="go('host-new-group')" style="margin-top:.3rem">
+      <span style="font-size:1.5rem">+</span>
+      <span style="font-size:.85rem;font-weight:600">Nouveau groupe manuel</span>
+    </button>
+  </div>
+</div>
+
+<!-- ══════════════ HOST: AUTO SPLIT ══════════════ -->
+<div id="host-auto-split" class="screen">
+  <div class="sh">
+    <button class="back" onclick="goHostDash()">←</button>
+    <div class="ey">Maître du jeu</div>
+    <h1>Répartition auto 👥</h1>
+    <p class="sub">Entre le nombre de joueurs, on fait les groupes</p>
+  </div>
+  <div class="sb">
+    <div>
+      <p class="slbl">Nombre total de joueurs</p>
+      <div style="display:flex;align-items:center;gap:.8rem">
+        <div class="stepper" style="flex:0 0 auto"><button class="stepbtn" onclick="asStep(-1)">−</button><span class="stepval" id="asCount">8</span><button class="stepbtn" onclick="asStep(1)">+</button></div>
+        <div id="asSummary" style="font-size:.82rem;color:var(--muted)"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="crow">
+        <div><div style="font-weight:600;font-size:.92rem">Undercovers 🕵️</div><div style="font-size:.72rem;color:var(--muted)">Par groupe</div></div>
+        <div class="stepper"><button class="stepbtn" onclick="asStepUc(-1)">−</button><span class="stepval" id="asUc">1</span><button class="stepbtn" onclick="asStepUc(1)">+</button></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="crow">
+        <div><div style="font-weight:600;font-size:.92rem">Mr. White 🤍</div><div style="font-size:.72rem;color:var(--muted)">Aucun mot — bluff total</div></div>
+        <label class="toggle"><input type="checkbox" id="asMw" onchange="asPreview()"><span class="ttrack"></span></label>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="crow">
+        <div><div style="font-weight:600;font-size:.92rem">Les mots 🔡</div><div style="font-size:.72rem;color:var(--muted)" id="asCat">—</div></div>
+        <button class="btn-icon" onclick="asReroll()">🔀</button>
+      </div>
+      <div class="chips"><span class="chip c-civ" id="asWc">—</span><span style="font-size:.68rem;color:var(--muted);font-weight:700">VS</span><span class="chip c-spy" id="asWs">—</span></div>
+    </div>
+
+    <div id="asPreview" style="display:flex;flex-direction:column;gap:.4rem"></div>
+  </div>
+  <div class="sf">
+    <button class="btn btn-p" id="asCreateBtn" onclick="asCreateAll()">Créer tous les groupes →</button>
+  </div>
+</div>
+
+<!-- ══════════════ HOST: ALL QR CODES ══════════════ -->
+<div id="host-all-qr" class="screen">
+  <div class="sh">
+    <button class="back" onclick="goHostDash()">←</button>
+    <div class="ey">Maître du jeu</div>
+    <h1>QR Codes 📱</h1>
+    <p class="sub">Les joueurs scannent le QR de leur groupe</p>
+  </div>
+  <div class="sb" id="allQrBody" style="display:flex;flex-wrap:wrap;gap:1rem;justify-content:center"></div>
+  <div class="sf">
+    <button class="btn btn-p" onclick="goHostDash()">Retour au dashboard →</button>
   </div>
 </div>
 
@@ -712,6 +776,122 @@ async function hgCreate(){
   hListen(code);
   hOpenGroup(code);
 }
+
+// ════════════════════════════════════════════
+//  HOST: AUTO SPLIT
+// ════════════════════════════════════════════
+let AS={count:8,uc:1,pairIdx:0};
+
+function splitGroups(n){
+  if(n<4)return [];
+  // Find number of groups k where each group is 4-8
+  const k=Math.ceil(n/8);
+  const base=Math.floor(n/k);
+  const rem=n%k;
+  // rem groups get base+1, (k-rem) groups get base
+  const groups=[];
+  for(let i=0;i<k;i++) groups.push(i<rem?base+1:base);
+  return groups;
+}
+
+function asStep(d){
+  AS.count=Math.max(4,Math.min(100,AS.count+d));
+  document.getElementById('asCount').textContent=AS.count;
+  asPreview();
+}
+function asStepUc(d){
+  AS.uc=Math.max(1,Math.min(3,AS.uc+d));
+  document.getElementById('asUc').textContent=AS.uc;
+  asPreview();
+}
+function asReroll(){
+  AS.pairIdx=rnd(PAIRS.length);
+  const p=PAIRS[AS.pairIdx]||['—','—',''];
+  document.getElementById('asWc').textContent=p[0];
+  document.getElementById('asWs').textContent=p[1];
+  document.getElementById('asCat').textContent=p[2]||'';
+}
+function asPreview(){
+  const grps=splitGroups(AS.count);
+  const mw=document.getElementById('asMw').checked;
+  const sum=document.getElementById('asSummary');
+  const prev=document.getElementById('asPreview');
+  if(grps.length===0){
+    sum.textContent='Min 4 joueurs';
+    prev.innerHTML='';
+    document.getElementById('asCreateBtn').disabled=true;
+    return;
+  }
+  document.getElementById('asCreateBtn').disabled=false;
+  sum.textContent=`${grps.length} groupe${grps.length>1?'s':''} de ${grps.join(', ')} joueurs`;
+  prev.innerHTML=grps.map((sz,i)=>{
+    const minNeeded=AS.uc+(mw?2:1);
+    const ok=sz>=minNeeded;
+    return `<div class="card" style="padding:.6rem .8rem">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <span style="font-weight:600;font-size:.88rem">Groupe ${i+1}</span>
+        <span style="font-size:.82rem;color:var(--muted)">${sz} joueurs</span>
+      </div>
+      ${!ok?'<div style="color:var(--r);font-size:.75rem;margin-top:.2rem">Pas assez de joueurs pour cette config</div>':''}
+    </div>`;
+  }).join('');
+}
+
+async function asCreateAll(){
+  const grps=splitGroups(AS.count);
+  if(grps.length===0)return;
+  const mw=document.getElementById('asMw').checked;
+  const pair=PAIRS[AS.pairIdx]||PAIRS[0];
+  const btn=document.getElementById('asCreateBtn');
+  btn.disabled=true;btn.textContent='Création en cours…';
+
+  const created=[];
+  for(let i=0;i<grps.length;i++){
+    const code=genCode();
+    const name=`Groupe ${H.groups.length+1}`;
+    const token=genToken();
+    await db.ref(`rooms/${code}`).set({
+      hostToken:token,status:'lobby',
+      config:{uc:AS.uc,mw:mw,pairIdx:AS.pairIdx,maxPlayers:grps[i]},
+      civWord:pair[0],spyWord:pair[1],
+      players:{},round:1,currentSpeaker:null,lastElim:null,winner:null,
+      groupName:name,createdAt:Date.now(),openJoin:true,
+    });
+    H.groups.push({code,name,token});
+    hListen(code);
+    created.push({code,name,size:grps[i]});
+  }
+  localStorage.setItem('uc_hgroups',JSON.stringify(H.groups));
+  btn.disabled=false;btn.textContent='Créer tous les groupes →';
+
+  // Show all QR codes
+  const body=document.getElementById('allQrBody');
+  body.innerHTML=created.map(g=>`
+    <div style="background:var(--bg2);border:1px solid var(--border);border-radius:16px;padding:1rem;text-align:center;min-width:180px;flex:1;max-width:260px">
+      <div style="font-weight:700;font-size:.95rem;margin-bottom:.3rem">${esc(g.name)}</div>
+      <div style="font-size:.78rem;color:var(--muted);margin-bottom:.6rem">${g.size} places · Code: ${g.code}</div>
+      <div id="qr-${g.code}" style="display:inline-block"></div>
+    </div>
+  `).join('');
+  go('host-all-qr');
+  // Render QR codes after DOM is ready
+  created.forEach(g=>{
+    const url=location.origin+location.pathname+'?join='+g.code;
+    renderQRinto(document.getElementById('qr-'+g.code),url);
+  });
+  toast(`${created.length} groupe${created.length>1?'s':''} créé${created.length>1?'s':''} !`);
+}
+
+// Init auto-split form when screen opens
+const _origGo=go;
+go=function(id){
+  _origGo(id);
+  if(id==='host-auto-split'){
+    AS.pairIdx=rnd(PAIRS.length);
+    asReroll();
+    asPreview();
+  }
+};
 
 // ════════════════════════════════════════════
 //  HOST: MANAGE GROUP
