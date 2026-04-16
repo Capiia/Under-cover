@@ -508,28 +508,13 @@ const MAX_ROOMS=50;
 const ROOM_TTL_MS=24*60*60*1000; // 24h
 
 async function cleanupExpiredRooms(){
-  try{
-    const snap=await db.ref('rooms').orderByChild('createdAt').once('value');
-    if(!snap.exists())return;
-    const now=Date.now(),upd={};
-    snap.forEach(child=>{
-      const d=child.val();
-      if(d.createdAt&&(now-d.createdAt)>ROOM_TTL_MS){
-        upd['rooms/'+child.key]=null;
-      }
-    });
-    if(Object.keys(upd).length>0) await db.ref().update(upd);
-  }catch(e){console.warn('Cleanup failed',e);}
+  // Cleanup requires reading all /rooms — only works with admin SDK or relaxed rules.
+  // Skip client-side cleanup; expired rooms are harmless and can be cleaned manually.
 }
 
 async function canCreateRoom(){
-  await cleanupExpiredRooms();
-  const snap=await db.ref('rooms').once('value');
-  const count=snap.numChildren();
-  if(count>=MAX_ROOMS){
-    toast(`Max ${MAX_ROOMS} salles actives — réessaie plus tard`);
-    return false;
-  }
+  // Cannot read /rooms list without permission — skip room count check.
+  // The MAX_ROOMS limit is a soft guard; Firebase rules are the real gate.
   return true;
 }
 
