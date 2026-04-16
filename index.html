@@ -1031,10 +1031,10 @@ function renderGroup(){
   }
 }
 
-// Host group actions — all include hostToken for Firebase Security Rules
+// Host group actions — hostToken is only set at room creation (immutable in Firebase rules)
 async function hRemovePlayer(n){
   if(!H.cur)return;
-  await db.ref(`rooms/${H.cur}`).update({hostToken:hToken(H.cur),[`players/${n}`]:null});
+  await db.ref(`rooms/${H.cur}`).update({[`players/${n}`]:null});
 }
 async function hDeleteGroup(){
   if(!H.cur)return;
@@ -1046,7 +1046,7 @@ async function hStartGroup(){
   const code=H.cur,d=H.data[code];if(!d)return;
   const cfg=d.config,names=shuffle(Object.keys(d.players||{}));
   if(names.length<4){toast('Min 4 joueurs');return;}
-  const upd={hostToken:hToken(code)};
+  const upd={};
   names.forEach((n,i)=>{
     let role='civilian',word=d.civWord;
     if(i<cfg.uc){role='undercover';word=d.spyWord;}
@@ -1059,10 +1059,10 @@ async function hStartGroup(){
 }
 async function hSetSpk(n){
   const cur=H.data[H.cur]?.currentSpeaker;
-  await db.ref(`rooms/${H.cur}`).update({hostToken:hToken(H.cur),currentSpeaker:cur===n?null:n});
+  await db.ref(`rooms/${H.cur}`).update({currentSpeaker:cur===n?null:n});
 }
 async function hGoVote(){
-  const upd={hostToken:hToken(H.cur),status:'voting',currentSpeaker:null};
+  const upd={status:'voting',currentSpeaker:null};
   Object.keys(H.data[H.cur]?.players||{}).forEach(n=>{upd[`players/${n}/vote`]=null;});
   await db.ref(`rooms/${H.cur}`).update(upd);
 }
@@ -1072,37 +1072,36 @@ function hSelElim(n){
 async function hConfirmElim(){
   if(!H.selElim||!H.cur)return;const d=H.data[H.cur],p=d?.players?.[H.selElim];if(!p)return;
   await db.ref(`rooms/${H.cur}`).update({
-    hostToken:hToken(H.cur),
     status:'elimination',lastElim:{name:H.selElim,role:p.role,word:p.word||null},
     [`players/${H.selElim}/eliminated`]:true,
   });
   H.selElim=null;
 }
-async function hGoMwGuess(){await db.ref(`rooms/${H.cur}`).update({hostToken:hToken(H.cur),status:'mwguess'});}
+async function hGoMwGuess(){await db.ref(`rooms/${H.cur}`).update({status:'mwguess'});}
 async function hResolveMwGuess(correct){
   const win=correct?'mrwhite':(checkWin(H.data[H.cur]?.players)||'civilians');
-  await db.ref(`rooms/${H.cur}`).update({hostToken:hToken(H.cur),status:'end',winner:win});
+  await db.ref(`rooms/${H.cur}`).update({status:'end',winner:win});
 }
 async function hAfterElim(){
   const d=H.data[H.cur];
   const win=checkWin(d.players);
-  if(win){await db.ref(`rooms/${H.cur}`).update({hostToken:hToken(H.cur),status:'end',winner:win});return;}
-  const upd={hostToken:hToken(H.cur),status:'playing',currentSpeaker:null};
+  if(win){await db.ref(`rooms/${H.cur}`).update({status:'end',winner:win});return;}
+  const upd={status:'playing',currentSpeaker:null};
   Object.keys(d.players||{}).forEach(n=>{if(!d.players[n].eliminated)upd[`players/${n}/ready`]=true;upd[`players/${n}/vote`]=null;});
   await db.ref(`rooms/${H.cur}`).update(upd);
 }
 async function hEndGroup(){
   const win=checkWin(H.data[H.cur]?.players)||'none';
-  await db.ref(`rooms/${H.cur}`).update({hostToken:hToken(H.cur),status:'end',winner:win});
+  await db.ref(`rooms/${H.cur}`).update({status:'end',winner:win});
 }
 async function hAskReplay(){
-  const upd={hostToken:hToken(H.cur),status:'replay'};
+  const upd={status:'replay'};
   Object.keys(H.data[H.cur]?.players||{}).forEach(n=>{upd[`players/${n}/ready`]=false;});
   await db.ref(`rooms/${H.cur}`).update(upd);
 }
 async function hDoReplay(){
   const idx=rnd(PAIRS.length),pair=PAIRS[idx]||PAIRS[0];
-  const upd={hostToken:hToken(H.cur),status:'lobby',winner:null,lastElim:null,civWord:pair[0],spyWord:pair[1],'config/pairIdx':idx};
+  const upd={status:'lobby',winner:null,lastElim:null,civWord:pair[0],spyWord:pair[1],'config/pairIdx':idx};
   Object.keys(H.data[H.cur]?.players||{}).forEach(n=>{
     upd[`players/${n}/role`]=null;upd[`players/${n}/word`]=null;
     upd[`players/${n}/eliminated`]=false;upd[`players/${n}/vote`]=null;
@@ -1213,16 +1212,16 @@ function cRenderLobby(){
 async function csAddLobbyP(){
   const inp=document.getElementById('csAddIn');const n=inp.value.trim();if(!n||!C.code)return;
   if(C.data?.players?.[n]){toast('Déjà là');return;}
-  await db.ref(`rooms/${C.code}`).update({hostToken:C.token,[`players/${n}`]:{connected:false,role:null,word:null,eliminated:false,vote:null,ready:false}});
+  await db.ref(`rooms/${C.code}`).update({[`players/${n}`]:{connected:false,role:null,word:null,eliminated:false,vote:null,ready:false}});
   inp.value='';
 }
-async function csRemoveLobbyP(n){if(C.code)await db.ref(`rooms/${C.code}`).update({hostToken:C.token,[`players/${n}`]:null});}
+async function csRemoveLobbyP(n){if(C.code)await db.ref(`rooms/${C.code}`).update({[`players/${n}`]:null});}
 
 async function csStart(){
   const d=C.data;if(!d)return;
   const cfg=d.config,names=shuffle(Object.keys(d.players||{}));
   if(names.length<4){toast('Min 4 joueurs');return;}
-  const upd={hostToken:C.token};
+  const upd={};
   names.forEach((n,i)=>{
     let role='civilian',word=d.civWord;
     if(i<cfg.uc){role='undercover';word=d.spyWord;}
@@ -1323,42 +1322,42 @@ function cRenderGame(){
   }
 }
 
-async function cSetSpk(n){const cur=C.data?.currentSpeaker;await C.ref.update({hostToken:C.token,currentSpeaker:cur===n?null:n});}
+async function cSetSpk(n){const cur=C.data?.currentSpeaker;await C.ref.update({currentSpeaker:cur===n?null:n});}
 async function cGoVote(){
-  const upd={hostToken:C.token,status:'voting',currentSpeaker:null};
+  const upd={status:'voting',currentSpeaker:null};
   Object.keys(C.data?.players||{}).forEach(n=>{upd[`players/${n}/vote`]=null;});
   await C.ref.update(upd);
 }
 function cSelElim(n){C.selElim=n;cRenderGame();}
 async function cConfirmElim(){
   if(!C.selElim)return;const p=C.data?.players?.[C.selElim];if(!p)return;
-  await C.ref.update({hostToken:C.token,status:'elimination',lastElim:{name:C.selElim,role:p.role,word:p.word||null},[`players/${C.selElim}/eliminated`]:true});
+  await C.ref.update({status:'elimination',lastElim:{name:C.selElim,role:p.role,word:p.word||null},[`players/${C.selElim}/eliminated`]:true});
   C.selElim=null;
 }
-async function cGoMwGuess(){await C.ref.update({hostToken:C.token,status:'mwguess'});}
+async function cGoMwGuess(){await C.ref.update({status:'mwguess'});}
 async function cResolveMwGuess(correct){
   const win=correct?'mrwhite':(checkWin(C.data?.players)||'civilians');
-  await C.ref.update({hostToken:C.token,status:'end',winner:win});
+  await C.ref.update({status:'end',winner:win});
 }
 async function cAfterElim(){
   const win=checkWin(C.data.players);
-  if(win){await C.ref.update({hostToken:C.token,status:'end',winner:win});return;}
-  const upd={hostToken:C.token,status:'playing',currentSpeaker:null};
+  if(win){await C.ref.update({status:'end',winner:win});return;}
+  const upd={status:'playing',currentSpeaker:null};
   Object.keys(C.data.players||{}).forEach(n=>{if(!C.data.players[n].eliminated)upd[`players/${n}/ready`]=true;upd[`players/${n}/vote`]=null;});
   await C.ref.update(upd);
 }
 async function cEndGame(){
   const win=checkWin(C.data?.players)||'none';
-  await C.ref.update({hostToken:C.token,status:'end',winner:win});
+  await C.ref.update({status:'end',winner:win});
 }
 async function cAskReplay(){
-  const upd={hostToken:C.token,status:'replay'};
+  const upd={status:'replay'};
   Object.keys(C.data?.players||{}).forEach(n=>{upd[`players/${n}/ready`]=false;});
   await C.ref.update(upd);
 }
 async function cDoReplay(){
   const idx=rnd(PAIRS.length),pair=PAIRS[idx]||PAIRS[0];
-  const upd={hostToken:C.token,status:'lobby',winner:null,lastElim:null,civWord:pair[0],spyWord:pair[1],'config/pairIdx':idx};
+  const upd={status:'lobby',winner:null,lastElim:null,civWord:pair[0],spyWord:pair[1],'config/pairIdx':idx};
   Object.keys(C.data?.players||{}).forEach(n=>{
     upd[`players/${n}/role`]=null;upd[`players/${n}/word`]=null;
     upd[`players/${n}/eliminated`]=false;upd[`players/${n}/vote`]=null;
