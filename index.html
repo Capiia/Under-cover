@@ -648,6 +648,10 @@ function go(id){
   await loadWords();
   H.gPairIdx=rnd(PAIRS.length);
 
+  // Check player session first (reconnect after refresh)
+  const pc=localStorage.getItem('uc_pcode'),pn=localStorage.getItem('uc_pname');
+  if(pc&&pn){P.code=pc;P.name=pn;pListen(pc);return;}
+
   // Check URL param ?join=XXXX
   const join=new URLSearchParams(location.search).get('join');
   if(join&&join.length===4){
@@ -656,10 +660,6 @@ function go(id){
     jLookup();
     return;
   }
-
-  // Check player session
-  const pc=localStorage.getItem('uc_pcode'),pn=localStorage.getItem('uc_pname');
-  if(pc&&pn){P.code=pc;P.name=pn;pListen(pc);return;}
 
   // Check classic host session
   const cc=localStorage.getItem('uc_ccode'),ct=localStorage.getItem('uc_ctoken');
@@ -1321,7 +1321,15 @@ async function jLookup(){
   if(code.length!==4){toast('Code à 4 lettres');return;}
   const snap=await db.ref(`rooms/${code}`).once('value');
   if(!snap.exists()){toast('Salle introuvable 🤷');return;}
-  const d=snap.val();if(d.status!=='lobby'){toast('Déjà lancée !');return;}
+  const d=snap.val();
+  // Allow reconnect if player name is in localStorage and exists in the room
+  const savedName=localStorage.getItem('uc_pname');
+  if(d.status!=='lobby'&&savedName&&d.players?.[savedName]){
+    P.code=code;P.name=savedName;
+    localStorage.setItem('uc_pcode',code);
+    pListen(code);return;
+  }
+  if(d.status!=='lobby'){toast('Déjà lancée !');return;}
   P.code=code;
 
   if(d.openJoin){
