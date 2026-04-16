@@ -496,11 +496,12 @@
 </div>
 
 <!-- ══════════════ PLAYER: VOTE SENT ══════════════ -->
-<div id="player-vote-sent" class="screen scenter">
-  <div style="font-size:2.2rem">🗳️</div>
-  <p style="font-size:1rem;font-weight:700">Vote envoyé !</p>
-  <p style="font-size:.78rem;color:var(--muted)">Tu as voté : <b id="pvFor">—</b></p>
-  <p style="font-size:.8rem;color:var(--muted)" class="pulse">En attente du maître du jeu…</p>
+<div id="player-vote-sent" class="screen">
+  <div class="sh"><div class="ey">Vote</div><h1 id="pvsTitle">🗳️ Vote envoyé !</h1><p class="sub" id="pvsSub">En attente des autres votes…</p></div>
+  <div class="sb" id="pvsBody">
+    <p style="font-size:.78rem;color:var(--muted);text-align:center">Tu as voté : <b id="pvFor">—</b></p>
+  </div>
+  <div class="sf" id="pvsFoot"></div>
 </div>
 
 <!-- ══════════════ PLAYER: ELIM ══════════════ -->
@@ -940,54 +941,50 @@ function renderGroup(){
 
   // ── VOTING (temps réel) ──
   if(st==='voting'){
-    document.getElementById('hmTitle').textContent='Votes en direct 👁️';
     const counts={};active.forEach(n=>{counts[n]=0;});
-    const whoVotedFor={};// name -> who they voted for
+    const whoVotedFor={};
     active.forEach(n=>{const v=ps[n]?.vote;if(v){counts[v]=(counts[v]||0)+1;whoVotedFor[n]=v;}});
     const voted=active.filter(n=>ps[n]?.vote).length;
+    const allVoted=voted===active.length;
+    const confirmed=active.filter(n=>ps[n]?.mwGuess==='confirmed').length;
+    const allConfirmed=allVoted&&confirmed===active.length;
+
+    // Auto-transition to end when all confirmed
+    if(allConfirmed){
+      db.ref(`rooms/${code}`).update({status:'end',winner:'reveal'});
+      return;
+    }
+
     const maxV=Math.max(...Object.values(counts),0);
     const sorted=Object.entries(counts).sort((a,b)=>b[1]-a[1]);
-    // Show who voted for whom
-    const voteDetail=active.map(n=>{
-      const v=whoVotedFor[n];
-      return`<div class="lp"><div class="av sm">${esc(n[0]).toUpperCase()}</div><div style="flex:1;font-size:.85rem">${esc(n)}</div><div style="font-size:.8rem;font-weight:600;color:${v?'var(--red)':'var(--muted)'}">${v?'→ '+esc(v):'…'}</div></div>`;
-    }).join('');
-    body.innerHTML=`
-      <div class="info">${voted===active.length?'✅ Tous ont voté !':`⏳ ${voted}/${active.length} votes`}</div>
-      <p class="slbl">Qui vote pour qui</p>
-      ${voteDetail}
-      <div class="divider"></div>
-      <p class="slbl">Résultat</p>
-      ${sorted.map(([n,cnt])=>`<div class="vi ${cnt===maxV&&cnt>0?'lead':''} ${H.selElim===n?'sel':''}" onclick="hSelElim('${escAttr(n)}')"><div class="av">${esc(n[0]).toUpperCase()}</div><div style="font-weight:600;flex:1;font-size:.92rem">${esc(n)}</div>${cnt>0?`<div class="vcnt">☠️ ${cnt}</div>`:''}</div>`).join('')}
-    `;
-    foot.innerHTML=`<button class="btn btn-r" onclick="hConfirmElim()" ${H.selElim?'':'disabled'}>Éliminer ☠️</button><button class="btn btn-ghost btn-sm" onclick="hEndGroup()">Terminer</button>`;
-    return;
-  }
 
-  // ── ELIMINATION ──
-  if(st==='elimination'){
-    const e=d.lastElim;if(!e)return;
-    const[badge,cls,sub]=elimInfo(e,d);
-    document.getElementById('hmTitle').textContent='Éliminé·e';
-    body.innerHTML=`<div style="display:flex;flex-direction:column;align-items:center;gap:1rem;padding:1.5rem 0"><div class="elim-card"><div class="av lg">${esc(e.name[0]).toUpperCase()}</div><div style="font-size:1.4rem;font-weight:800">${esc(e.name)}</div><div class="badge ${cls}">${badge}</div><p style="font-size:.8rem;color:var(--muted);text-align:center">${sub}</p></div></div>`;
-    foot.innerHTML=e.role==='mrwhite'
-      ?`<button class="btn btn-g" onclick="hGoMwGuess()">Mr. White joue sa chance →</button><button class="btn btn-ghost btn-sm" onclick="hEndGroup()">Terminer</button>`
-      :`<button class="btn btn-p" onclick="hAfterElim()">Continuer →</button><button class="btn btn-ghost btn-sm" onclick="hEndGroup()">Terminer</button>`;
-    return;
-  }
-
-  // ── MWGUESS ──
-  if(st==='mwguess'){
-    document.getElementById('hmTitle').textContent='Mr. White 🤍';
-    const mwPlayer=names.find(n=>ps[n]?.role==='mrwhite');
-    const guess=mwPlayer&&ps[mwPlayer]?.mwGuess;
-    if(guess){
-      const correct=guess.toLowerCase()===d.civWord.toLowerCase();
-      body.innerHTML=`<div style="display:flex;flex-direction:column;align-items:center;gap:1rem;padding:2rem 0"><div style="font-size:2.2rem">${correct?'🎉':'❌'}</div><p style="font-size:1rem;font-weight:700">Mr. White a dit : "${esc(guess)}"</p><p style="font-size:.9rem;font-weight:600;color:${correct?'var(--green)':'var(--red)'}">${correct?'Correct ! Mr. White gagne !':'Raté !'}</p></div>`;
-      foot.innerHTML=`<button class="btn btn-p" onclick="hResolveMwGuess(${correct})">Continuer →</button>`;
-    } else {
-      body.innerHTML=`<div style="display:flex;flex-direction:column;align-items:center;gap:1rem;padding:2rem 0"><div style="font-size:2.2rem">🤍</div><p style="font-size:1rem;font-weight:700">Mr. White tente sa chance…</p><p style="font-size:.82rem;color:var(--muted)" class="pulse">En attente.</p></div>`;
+    if(!allVoted){
+      document.getElementById('hmTitle').textContent='Votes en cours 🗳️';
+      const voteDetail=active.map(n=>{
+        const v=whoVotedFor[n];
+        return`<div class="lp"><div class="av sm">${esc(n[0]).toUpperCase()}</div><div style="flex:1;font-size:.85rem">${esc(n)}</div><div style="font-size:.8rem;font-weight:600;color:${v?'var(--green)':'var(--muted)'}">${v?'✓ A voté':'…'}</div></div>`;
+      }).join('');
+      body.innerHTML=`
+        <div class="info">⏳ ${voted}/${active.length} votes</div>
+        <p class="slbl">Joueurs</p>
+        ${voteDetail}
+      `;
       foot.innerHTML=`<button class="btn btn-ghost btn-sm" onclick="hEndGroup()">Terminer</button>`;
+    } else {
+      document.getElementById('hmTitle').textContent='Résultats 👁️';
+      const confirmDetail=active.map(n=>{
+        const c=ps[n]?.mwGuess==='confirmed';
+        return`<div class="lp"><div class="dot ${c?'on':'off'}"></div><div class="av sm">${esc(n[0]).toUpperCase()}</div><div style="flex:1;font-size:.85rem">${esc(n)}</div><div style="font-size:.75rem;color:var(--muted)">${c?'Vu ✓':'…'}</div></div>`;
+      }).join('');
+      body.innerHTML=`
+        <div class="info">⏳ ${confirmed}/${active.length} ont confirmé — révélation auto</div>
+        <p class="slbl">Résultats des votes</p>
+        ${sorted.map(([n,cnt])=>`<div class="vi ${cnt===maxV&&cnt>0?'lead':''}"><div class="av">${esc(n[0]).toUpperCase()}</div><div style="font-weight:600;flex:1;font-size:.92rem">${esc(n)}</div>${cnt>0?`<div class="vcnt">${cnt} vote${cnt>1?'s':''}</div>`:''}</div>`).join('')}
+        <div class="divider"></div>
+        <p class="slbl">Confirmations</p>
+        ${confirmDetail}
+      `;
+      foot.innerHTML=`<button class="btn btn-p" onclick="hEndGroup()">Révéler maintenant →</button>`;
     }
     return;
   }
@@ -1070,8 +1067,7 @@ async function hAfterElim(){
   await db.ref(`rooms/${H.cur}`).update(upd);
 }
 async function hEndGroup(){
-  const win=checkWin(H.data[H.cur]?.players)||'none';
-  await db.ref(`rooms/${H.cur}`).update({status:'end',winner:win});
+  await db.ref(`rooms/${H.cur}`).update({status:'end',winner:'reveal'});
 }
 async function hAskReplay(){
   const upd={status:'replay'};
@@ -1218,48 +1214,27 @@ function cRenderGame(){
   const body=document.getElementById('cgBody'),foot=document.getElementById('cgFoot');
 
   if(st==='voting'){
-    document.getElementById('cgEy').textContent='Vote';
-    document.getElementById('cgTitle').textContent='Résultats 👁️';
-    document.getElementById('cgSub').textContent='Votes en direct';
     const counts={};active.forEach(n=>{counts[n]=0;});
     active.forEach(n=>{const v=ps[n]?.vote;if(v)counts[v]=(counts[v]||0)+1;});
-    const voted=active.filter(n=>ps[n]?.vote).length,maxV=Math.max(...Object.values(counts),0);
+    const voted=active.filter(n=>ps[n]?.vote).length;
+    const allVoted=voted===active.length;
+    const confirmed=active.filter(n=>ps[n]?.mwGuess==='confirmed').length;
+    const allConfirmed=allVoted&&confirmed===active.length;
+    if(allConfirmed){C.ref.update({status:'end',winner:'reveal'});return;}
+    const maxV=Math.max(...Object.values(counts),0);
     const sorted=Object.entries(counts).sort((a,b)=>b[1]-a[1]);
+    document.getElementById('cgEy').textContent='Vote';
+    document.getElementById('cgTitle').textContent=allVoted?'Résultats 👁️':'Votes en cours 🗳️';
+    document.getElementById('cgSub').textContent=allVoted?`${confirmed}/${active.length} confirmés`:`${voted}/${active.length} votes`;
     body.innerHTML=`
-      <div class="info">${voted===active.length?'✅ Tous ont voté !':'⏳ '+voted+'/'+active.length+' votes'}</div>
-      ${sorted.map(([n,cnt])=>`<div class="vi ${cnt===maxV&&cnt>0?'lead':''} ${C.selElim===n?'sel':''}" onclick="cSelElim('${escAttr(n)}')"><div class="av">${esc(n[0]).toUpperCase()}</div><div style="font-weight:600;flex:1;font-size:.92rem">${esc(n)}</div>${cnt>0?`<div class="vcnt">☠️ ${cnt}</div>`:''}</div>`).join('')}
+      <div class="info">${allVoted?`⏳ ${confirmed}/${active.length} ont confirmé`:`⏳ ${voted}/${active.length} votes`}</div>
+      ${allVoted?`<p class="slbl">Résultats</p>`:'<p class="slbl">Joueurs</p>'}
+      ${allVoted?sorted.map(([n,cnt])=>`<div class="vi ${cnt===maxV&&cnt>0?'lead':''}"><div class="av">${esc(n[0]).toUpperCase()}</div><div style="font-weight:600;flex:1;font-size:.92rem">${esc(n)}</div>${cnt>0?`<div class="vcnt">${cnt} vote${cnt>1?'s':''}</div>`:''}</div>`).join('')
+        :active.map(n=>`<div class="lp"><div class="av sm">${esc(n[0]).toUpperCase()}</div><div style="flex:1;font-size:.85rem">${esc(n)}</div><div style="font-size:.8rem;font-weight:600;color:${ps[n]?.vote?'var(--green)':'var(--muted)'}">${ps[n]?.vote?'✓ A voté':'…'}</div></div>`).join('')}
     `;
-    foot.innerHTML=`<button class="btn btn-r" onclick="cConfirmElim()" ${C.selElim?'':'disabled'}>Éliminer ☠️</button><button class="btn btn-ghost btn-sm" onclick="cEndGame()">Terminer</button>`;
-    return;
-  }
-
-  if(st==='elimination'){
-    const e=d.lastElim;if(!e)return;
-    const[badge,cls,sub]=elimInfo(e,d);
-    document.getElementById('cgEy').textContent='Éliminé·e';
-    document.getElementById('cgTitle').textContent=e.name;
-    document.getElementById('cgSub').textContent='';
-    body.innerHTML=`<div style="display:flex;flex-direction:column;align-items:center;gap:1rem;padding:1.5rem 0"><div class="elim-card"><div class="av lg">${esc(e.name[0]).toUpperCase()}</div><div style="font-size:1.4rem;font-weight:800">${esc(e.name)}</div><div class="badge ${cls}">${badge}</div><p style="font-size:.8rem;color:var(--muted);text-align:center">${sub}</p></div></div>`;
-    foot.innerHTML=e.role==='mrwhite'
-      ?`<button class="btn btn-g" onclick="cGoMwGuess()">Mr. White joue sa chance →</button><button class="btn btn-ghost btn-sm" onclick="cEndGame()">Terminer</button>`
-      :`<button class="btn btn-p" onclick="cAfterElim()">Continuer →</button><button class="btn btn-ghost btn-sm" onclick="cEndGame()">Terminer</button>`;
-    return;
-  }
-
-  if(st==='mwguess'){
-    document.getElementById('cgEy').textContent='Mr. White';
-    document.getElementById('cgTitle').textContent='Suspense… 🤍';
-    document.getElementById('cgSub').textContent='';
-    const mwPlayer=names.find(n=>ps[n]?.role==='mrwhite');
-    const guess=mwPlayer&&ps[mwPlayer]?.mwGuess;
-    if(guess){
-      const correct=guess.toLowerCase()===d.civWord.toLowerCase();
-      body.innerHTML=`<div style="display:flex;flex-direction:column;align-items:center;gap:1rem;padding:2rem 0"><div style="font-size:2.2rem">${correct?'🎉':'❌'}</div><p style="font-size:1rem;font-weight:700">Mr. White a dit : "${esc(guess)}"</p><p style="font-size:.9rem;font-weight:600;color:${correct?'var(--green)':'var(--red)'}">${correct?'Correct ! Mr. White gagne !':'Raté !'}</p></div>`;
-      foot.innerHTML=`<button class="btn btn-p" onclick="cResolveMwGuess(${correct})">Continuer →</button>`;
-    } else {
-      body.innerHTML=`<div style="display:flex;flex-direction:column;align-items:center;gap:1rem;padding:2rem 0"><div style="font-size:2.2rem">🤍</div><p style="font-size:1rem;font-weight:700">Mr. White tente sa chance…</p><p style="font-size:.82rem;color:var(--muted)" class="pulse">En attente.</p></div>`;
-      foot.innerHTML=`<button class="btn btn-ghost btn-sm" onclick="cEndGame()">Terminer</button>`;
-    }
+    foot.innerHTML=allVoted
+      ?`<button class="btn btn-p" onclick="cEndGame()">Révéler maintenant →</button>`
+      :`<button class="btn btn-ghost btn-sm" onclick="cEndGame()">Terminer</button>`;
     return;
   }
 
@@ -1313,8 +1288,7 @@ async function cAfterElim(){
   await C.ref.update(upd);
 }
 async function cEndGame(){
-  const win=checkWin(C.data?.players)||'none';
-  await C.ref.update({status:'end',winner:win});
+  await C.ref.update({status:'end',winner:'reveal'});
 }
 async function cAskReplay(){
   const upd={status:'replay'};
@@ -1419,14 +1393,8 @@ function pRoute(){
   if(st==='lobby'){rPWait();go('player-wait');}
   else if(st==='voting'){
     if(!me.ready){rPRole(me);go('player-role');}
-    else if(me.eliminated){rPRound();go('player-round');}
-    else if(me.vote){document.getElementById('pvFor').textContent=me.vote;go('player-vote-sent');}
+    else if(me.vote){rPVoteSent();go('player-vote-sent');}
     else{rPVote();go('player-vote');}
-  }
-  else if(st==='elimination'){rPElim();go('player-elim');}
-  else if(st==='mwguess'){
-    if(me.role==='mrwhite'&&me.eliminated)go('player-mwguess');
-    else go('player-mwwait');
   }
   else if(st==='replay'){rPReplay(me);go('player-replay');}
   else if(st==='end'){rPEnd();go('player-end');}
@@ -1497,6 +1465,42 @@ function pvSel(i){
 }
 async function pVote(){if(!P.selVote)return;await db.ref(`rooms/${P.code}/players/${P.name}/vote`).set(P.selVote);}
 
+function rPVoteSent(){
+  const d=P.data,ps=d.players||{},me=ps[P.name];
+  const active=Object.keys(ps).filter(n=>!ps[n].eliminated);
+  const voted=active.filter(n=>ps[n]?.vote).length;
+  const allVoted=voted===active.length;
+  document.getElementById('pvFor').textContent=me.vote;
+
+  if(!allVoted){
+    document.getElementById('pvsTitle').textContent='🗳️ Vote envoyé !';
+    document.getElementById('pvsSub').textContent=`${voted}/${active.length} ont voté`;
+    document.getElementById('pvsBody').innerHTML=`<p style="font-size:.78rem;color:var(--muted);text-align:center">Tu as voté : <b>${esc(me.vote)}</b></p><p style="font-size:.82rem;color:var(--muted);text-align:center" class="pulse">En attente des autres…</p>`;
+    document.getElementById('pvsFoot').innerHTML='';
+  } else {
+    // All voted — show results
+    const counts={};active.forEach(n=>{counts[n]=0;});
+    active.forEach(n=>{const v=ps[n]?.vote;if(v)counts[v]=(counts[v]||0)+1;});
+    const maxV=Math.max(...Object.values(counts),0);
+    const sorted=Object.entries(counts).sort((a,b)=>b[1]-a[1]);
+    const confirmed=active.filter(n=>ps[n]?.mwGuess==='confirmed').length;
+    const iConfirmed=me.mwGuess==='confirmed';
+    document.getElementById('pvsTitle').textContent='Résultats 👁️';
+    document.getElementById('pvsSub').textContent=`${confirmed}/${active.length} ont confirmé`;
+    document.getElementById('pvsBody').innerHTML=`
+      <p class="slbl">Résultats des votes</p>
+      ${sorted.map(([n,cnt])=>`<div class="vi ${cnt===maxV&&cnt>0?'lead':''}"><div class="av">${esc(n[0]).toUpperCase()}</div><div style="font-weight:600;flex:1;font-size:.92rem">${esc(n)}</div>${cnt>0?`<div class="vcnt">${cnt} vote${cnt>1?'s':''}</div>`:''}</div>`).join('')}
+    `;
+    document.getElementById('pvsFoot').innerHTML=iConfirmed
+      ?`<p style="text-align:center;color:var(--green);font-weight:600">✓ Confirmé ! En attente des autres…</p>`
+      :`<button class="btn btn-p" onclick="pConfirmResults()">J'ai vu les résultats ✓</button>`;
+  }
+}
+
+async function pConfirmResults(){
+  await db.ref(`rooms/${P.code}/players/${P.name}/mwGuess`).set('confirmed');
+}
+
 function rPElim(){
   const e=P.data.lastElim;if(!e)return;
   document.getElementById('peAv').textContent=e.name[0].toUpperCase();
@@ -1558,6 +1562,7 @@ function winInfo(w){
   return{civilians:{emoji:'🏆',title:'Les civils gagnent !',sub:'Espions démasqués.',theme:'green'},
     undercover:{emoji:'🕵️',title:'Les undercovers gagnent !',sub:'Infiltration réussie.',theme:'blue'},
     mrwhite:{emoji:'🤍',title:'Mr. White gagne !',sub:'Le bluffeur a trouvé le mot.',theme:'gold'},
+    reveal:{emoji:'🔍',title:'Révélation !',sub:'Qui était qui ?',theme:'gold'},
     none:{emoji:'🎮',title:'Partie terminée',sub:'',theme:null}}[w]||{emoji:'🎮',title:'Terminé',sub:'',theme:null};
 }
 function revealHTML(ps,d){
