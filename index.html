@@ -938,18 +938,6 @@ function renderGroup(){
     return;
   }
 
-  // ── PLAYING (discussion, pas de tours) ──
-  if(st==='playing'){
-    document.getElementById('hmTitle').textContent='Discussion 🗣️';
-    const cur=d.currentSpeaker;
-    body.innerHTML=`
-      <div class="info">🎤 Appuie sur un joueur pour montrer qui parle. Quand c'est fini → Vote !</div>
-      ${names.map(n=>{const p=ps[n],isCur=n===cur;return`<div class="spk ${p.eliminated?'elim':''} ${isCur?'cur':''}" onclick="hSetSpk('${escAttr(n)}')"><div class="av">${esc(n[0]).toUpperCase()}</div><div style="flex:1;font-weight:500;font-size:.9rem">${esc(n)}</div>${isCur?'<span class="mic-tag">🎤</span>':''}${p.eliminated?'<span style="font-size:.7rem;color:var(--muted)">☠️</span>':''}</div>`;}).join('')}
-    `;
-    foot.innerHTML=`<button class="btn btn-r" onclick="hGoVote()">Voter ! 🗳️</button>`;
-    return;
-  }
-
   // ── VOTING (temps réel) ──
   if(st==='voting'){
     document.getElementById('hmTitle').textContent='Votes en direct 👁️';
@@ -1054,17 +1042,8 @@ async function hStartGroup(){
     upd[`players/${n}/role`]=role;upd[`players/${n}/word`]=word||null;
     upd[`players/${n}/ready`]=false;upd[`players/${n}/vote`]=null;upd[`players/${n}/eliminated`]=false;
   });
-  upd.status='playing';upd.currentSpeaker=null;upd.winner=null;upd.lastElim=null;
+  upd.status='voting';upd.currentSpeaker=null;upd.winner=null;upd.lastElim=null;
   await db.ref(`rooms/${code}`).update(upd);
-}
-async function hSetSpk(n){
-  const cur=H.data[H.cur]?.currentSpeaker;
-  await db.ref(`rooms/${H.cur}`).update({currentSpeaker:cur===n?null:n});
-}
-async function hGoVote(){
-  const upd={status:'voting',currentSpeaker:null};
-  Object.keys(H.data[H.cur]?.players||{}).forEach(n=>{upd[`players/${n}/vote`]=null;});
-  await db.ref(`rooms/${H.cur}`).update(upd);
 }
 function hSelElim(n){
   H.selElim=n;renderGroup();
@@ -1086,8 +1065,8 @@ async function hAfterElim(){
   const d=H.data[H.cur];
   const win=checkWin(d.players);
   if(win){await db.ref(`rooms/${H.cur}`).update({status:'end',winner:win});return;}
-  const upd={status:'playing',currentSpeaker:null};
-  Object.keys(d.players||{}).forEach(n=>{if(!d.players[n].eliminated)upd[`players/${n}/ready`]=true;upd[`players/${n}/vote`]=null;});
+  const upd={status:'voting',currentSpeaker:null};
+  Object.keys(d.players||{}).forEach(n=>{upd[`players/${n}/vote`]=null;});
   await db.ref(`rooms/${H.cur}`).update(upd);
 }
 async function hEndGroup(){
@@ -1229,7 +1208,7 @@ async function csStart(){
     upd[`players/${n}/role`]=role;upd[`players/${n}/word`]=word||null;
     upd[`players/${n}/ready`]=false;upd[`players/${n}/vote`]=null;upd[`players/${n}/eliminated`]=false;
   });
-  upd.status='playing';upd.round=1;upd.currentSpeaker=null;upd.winner=null;upd.lastElim=null;
+  upd.status='voting';upd.round=1;upd.currentSpeaker=null;upd.winner=null;upd.lastElim=null;
   await db.ref(`rooms/${C.code}`).update(upd);
 }
 
@@ -1237,19 +1216,6 @@ function cRenderGame(){
   const d=C.data,st=d.status,ps=d.players||{},names=Object.keys(ps);
   const active=names.filter(n=>!ps[n].eliminated);
   const body=document.getElementById('cgBody'),foot=document.getElementById('cgFoot');
-
-  if(st==='playing'){
-    const cur=d.currentSpeaker;
-    document.getElementById('cgEy').textContent='En cours';
-    document.getElementById('cgTitle').textContent='Discussion 🗣️';
-    document.getElementById('cgSub').textContent=`${active.length} joueurs actifs · Code: ${C.code}`;
-    body.innerHTML=`
-      <div class="info">🎤 Appuie sur un joueur pour indiquer qui parle. Quand c'est fini → Vote !</div>
-      ${names.map(n=>{const p=ps[n],isCur=n===cur;return`<div class="spk ${p.eliminated?'elim':''} ${isCur?'cur':''}" onclick="cSetSpk('${escAttr(n)}')"><div class="av">${esc(n[0]).toUpperCase()}</div><div style="flex:1;font-weight:500;font-size:.9rem">${esc(n)}</div>${isCur?'<span class="mic-tag">🎤</span>':''}${p.eliminated?'<span style="font-size:.7rem;color:var(--muted)">☠️</span>':''}</div>`;}).join('')}
-    `;
-    foot.innerHTML=`<button class="btn btn-r" onclick="cGoVote()">Voter ! 🗳️</button>`;
-    return;
-  }
 
   if(st==='voting'){
     document.getElementById('cgEy').textContent='Vote';
@@ -1342,8 +1308,8 @@ async function cResolveMwGuess(correct){
 async function cAfterElim(){
   const win=checkWin(C.data.players);
   if(win){await C.ref.update({status:'end',winner:win});return;}
-  const upd={status:'playing',currentSpeaker:null};
-  Object.keys(C.data.players||{}).forEach(n=>{if(!C.data.players[n].eliminated)upd[`players/${n}/ready`]=true;upd[`players/${n}/vote`]=null;});
+  const upd={status:'voting',currentSpeaker:null};
+  Object.keys(C.data.players||{}).forEach(n=>{upd[`players/${n}/vote`]=null;});
   await C.ref.update(upd);
 }
 async function cEndGame(){
@@ -1451,12 +1417,9 @@ function pRoute(){
   const st=d.status,me=d.players?.[P.name];if(!me)return;
 
   if(st==='lobby'){rPWait();go('player-wait');}
-  else if(st==='playing'){
-    if(!me.ready){rPRole(me);go('player-role');}
-    else{rPRound();go('player-round');}
-  }
   else if(st==='voting'){
-    if(me.eliminated){rPRound();go('player-round');}
+    if(!me.ready){rPRole(me);go('player-role');}
+    else if(me.eliminated){rPRound();go('player-round');}
     else if(me.vote){document.getElementById('pvFor').textContent=me.vote;go('player-vote-sent');}
     else{rPVote();go('player-vote');}
   }
