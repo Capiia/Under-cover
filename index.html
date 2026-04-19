@@ -346,12 +346,24 @@
   <div class="sh">
     <button class="back" onclick="goHostDash()">←</button>
     <div class="ey">Maître du jeu</div>
-    <h1>QR Codes 📱</h1>
-    <p class="sub">Les joueurs scannent le QR de leur groupe</p>
+    <h1>Salles créées 📱</h1>
+    <p class="sub">Appuie sur un groupe pour montrer son QR</p>
   </div>
-  <div class="sb" id="allQrBody" style="display:flex;flex-wrap:wrap;gap:1rem;justify-content:center"></div>
+  <div class="sb" id="allQrBody" style="display:flex;flex-direction:column;gap:.7rem"></div>
   <div class="sf">
     <button class="btn btn-p" onclick="goHostDash()">Retour au dashboard →</button>
+  </div>
+</div>
+
+<!-- ══════════════ QR FULLSCREEN OVERLAY ══════════════ -->
+<div id="qrOverlay" style="display:none;position:fixed;inset:0;background:rgba(10,10,25,.97);z-index:1000;flex-direction:column;align-items:center;justify-content:center;padding:1rem;gap:1rem">
+  <div style="position:absolute;top:1rem;right:1rem"><button class="btn-icon" onclick="hQrCloseOverlay()" style="font-size:1.4rem;background:var(--bg2);width:48px;height:48px;border-radius:50%">✕</button></div>
+  <div style="text-align:center"><div class="ey" id="qrOvEy">Groupe</div><h1 style="font-size:1.6rem" id="qrOvTitle">—</h1><p class="sub" id="qrOvSub">—</p></div>
+  <div id="qrOvWrap" style="background:#fff;padding:1rem;border-radius:20px;box-shadow:0 10px 40px rgba(108,92,231,.35)"></div>
+  <div style="display:flex;gap:.8rem;align-items:center;margin-top:.5rem">
+    <button class="btn btn-ghost btn-sm" onclick="hQrPrev()" id="qrOvPrev" style="width:auto">← Précédent</button>
+    <div id="qrOvCounter" style="font-size:.85rem;color:var(--muted);min-width:50px;text-align:center">1/1</div>
+    <button class="btn btn-ghost btn-sm" onclick="hQrNext()" id="qrOvNext" style="width:auto">Suivant →</button>
   </div>
 </div>
 
@@ -881,30 +893,83 @@ async function asCreateAll(){
   localStorage.setItem('uc_hgroups',JSON.stringify(H.groups));
   btn.disabled=false;btn.textContent='Créer tous les groupes →';
 
-  // Show master QR + individual QRs
+  // Store created groups for the QR view
+  AS.created=created;
+  AS.qrIndex=0;
+  go('host-all-qr');
+  renderAllQrList();
+}
+
+function renderAllQrList(){
+  if(!AS.created)return;
   const body=document.getElementById('allQrBody');
-  const masterUrl=location.origin+location.pathname+'?rooms='+created.map(g=>g.code).join(',');
+  const masterUrl=location.origin+location.pathname+'?rooms='+AS.created.map(g=>g.code).join(',');
   body.innerHTML=`
-    <div style="width:100%;background:linear-gradient(135deg,var(--p1),var(--p2));border-radius:20px;padding:1.2rem;text-align:center;margin-bottom:.5rem">
-      <div style="font-weight:800;font-size:1rem;color:#fff;margin-bottom:.2rem">🎯 QR principal (à montrer à tous)</div>
-      <div style="font-size:.72rem;color:rgba(255,255,255,.85);margin-bottom:.6rem">Les joueurs choisissent leur groupe</div>
-      <div id="qr-master" style="display:inline-block;background:#fff;padding:.5rem;border-radius:12px"></div>
+    <div class="gcard" onclick="hQrOpenMaster()" style="background:linear-gradient(135deg,var(--p1),var(--p2));border:none;cursor:pointer">
+      <div class="gcard-head">
+        <div class="gcard-num" style="background:rgba(255,255,255,.25);color:#fff">🎯</div>
+        <div style="flex:1">
+          <div class="gcard-title" style="color:#fff">QR principal</div>
+          <div class="gcard-sub" style="color:rgba(255,255,255,.85)">Un seul QR — les joueurs choisissent leur groupe</div>
+        </div>
+        <span style="color:#fff;font-size:1.2rem">📱</span>
+      </div>
     </div>
-    ${created.map(g=>`
-      <div style="background:var(--bg2);border:1px solid var(--border);border-radius:16px;padding:.8rem;text-align:center;min-width:160px;flex:1;max-width:220px">
-        <div style="font-weight:700;font-size:.88rem;margin-bottom:.2rem">${esc(g.name)}</div>
-        <div style="font-size:.72rem;color:var(--muted);margin-bottom:.5rem">${g.size} places · ${g.code}</div>
-        <div id="qr-${g.code}" style="display:inline-block"></div>
+    <div style="text-align:center;color:var(--muted);font-size:.75rem;margin:.4rem 0">— ou un QR par groupe —</div>
+    ${AS.created.map((g,i)=>`
+      <div class="gcard" onclick="hQrOpen(${i})" style="cursor:pointer">
+        <div class="gcard-head">
+          <div class="gcard-num">${i+1}</div>
+          <div style="flex:1">
+            <div class="gcard-title">${esc(g.name)}</div>
+            <div class="gcard-sub" id="qrl-sub-${g.code}">${g.size} places · Code ${g.code}</div>
+          </div>
+          <span style="font-size:1.2rem">📱</span>
+        </div>
       </div>
     `).join('')}
   `;
-  go('host-all-qr');
-  // Render QR codes after DOM is ready
-  renderQRinto(document.getElementById('qr-master'),masterUrl);
-  created.forEach(g=>{
-    const url=location.origin+location.pathname+'?join='+g.code;
-    renderQRinto(document.getElementById('qr-'+g.code),url);
+  // Live player counts on each card
+  AS.created.forEach(g=>{
+    const el=document.getElementById('qrl-sub-'+g.code);
+    if(!el)return;
+    db.ref(`rooms/${g.code}/players`).on('value',snap=>{
+      const count=snap.numChildren();
+      if(el)el.textContent=`${count}/${g.size} joueurs · Code ${g.code}`;
+    });
   });
+}
+
+function hQrOpen(i){
+  AS.qrIndex=i;
+  hQrRenderOverlay();
+}
+function hQrOpenMaster(){
+  const masterUrl=location.origin+location.pathname+'?rooms='+AS.created.map(g=>g.code).join(',');
+  document.getElementById('qrOvEy').textContent='🎯 QR principal';
+  document.getElementById('qrOvTitle').textContent='Tous les groupes';
+  document.getElementById('qrOvSub').textContent='Les joueurs choisissent leur salle';
+  document.getElementById('qrOvWrap').innerHTML=makeQR(masterUrl,320);
+  document.getElementById('qrOvPrev').style.display='none';
+  document.getElementById('qrOvNext').style.display='none';
+  document.getElementById('qrOvCounter').textContent='';
+  document.getElementById('qrOverlay').style.display='flex';
+}
+function hQrRenderOverlay(){
+  const g=AS.created[AS.qrIndex];if(!g)return;
+  const url=location.origin+location.pathname+'?join='+g.code;
+  document.getElementById('qrOvEy').textContent=`Groupe ${AS.qrIndex+1}/${AS.created.length}`;
+  document.getElementById('qrOvTitle').textContent=g.name;
+  document.getElementById('qrOvSub').textContent=`${g.size} places · Code ${g.code}`;
+  document.getElementById('qrOvWrap').innerHTML=makeQR(url,320);
+  document.getElementById('qrOvPrev').style.display=AS.qrIndex>0?'block':'none';
+  document.getElementById('qrOvNext').style.display=AS.qrIndex<AS.created.length-1?'block':'none';
+  document.getElementById('qrOvCounter').textContent=`${AS.qrIndex+1}/${AS.created.length}`;
+  document.getElementById('qrOverlay').style.display='flex';
+}
+function hQrNext(){if(AS.qrIndex<AS.created.length-1){AS.qrIndex++;hQrRenderOverlay();}}
+function hQrPrev(){if(AS.qrIndex>0){AS.qrIndex--;hQrRenderOverlay();}}
+function hQrCloseOverlay(){document.getElementById('qrOverlay').style.display='none';}
   toast(`${created.length} groupe${created.length>1?'s':''} créé${created.length>1?'s':''} !`);
 }
 
