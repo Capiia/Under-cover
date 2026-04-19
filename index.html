@@ -420,6 +420,12 @@
   <div class="sf" id="hmFoot"></div>
 </div>
 
+<!-- ══════════════ PLAYER: ROOM PICKER ══════════════ -->
+<div id="player-pick" class="screen">
+  <div class="sh"><div class="ey">Choisis ton groupe</div><h1>Quelle salle ? 👥</h1><p class="sub">Rejoins celui que tu veux</p></div>
+  <div class="sb" id="ppList" style="display:flex;flex-direction:column;gap:.6rem"></div>
+</div>
+
 <!-- ══════════════ PLAYER: JOIN ══════════════ -->
 <div id="player-join" class="screen scenter">
   <div style="width:100%;max-width:300px;display:flex;flex-direction:column;gap:1rem">
@@ -652,6 +658,16 @@ function go(id){
   const pc=localStorage.getItem('uc_pcode'),pn=localStorage.getItem('uc_pname');
   if(pc&&pn){P.code=pc;P.name=pn;pListen(pc);return;}
 
+  // Check URL param ?rooms=A,B,C — show room picker
+  const roomsParam=new URLSearchParams(location.search).get('rooms');
+  if(roomsParam){
+    const codes=roomsParam.toUpperCase().split(',').filter(c=>/^[A-Z]{4}$/.test(c));
+    if(codes.length>0){
+      showRoomPicker(codes);
+      return;
+    }
+  }
+
   // Check URL param ?join=XXXX
   const join=new URLSearchParams(location.search).get('join');
   if(join&&join.length===4){
@@ -865,17 +881,26 @@ async function asCreateAll(){
   localStorage.setItem('uc_hgroups',JSON.stringify(H.groups));
   btn.disabled=false;btn.textContent='Créer tous les groupes →';
 
-  // Show all QR codes
+  // Show master QR + individual QRs
   const body=document.getElementById('allQrBody');
-  body.innerHTML=created.map(g=>`
-    <div style="background:var(--bg2);border:1px solid var(--border);border-radius:16px;padding:1rem;text-align:center;min-width:180px;flex:1;max-width:260px">
-      <div style="font-weight:700;font-size:.95rem;margin-bottom:.3rem">${esc(g.name)}</div>
-      <div style="font-size:.78rem;color:var(--muted);margin-bottom:.6rem">${g.size} places · Code: ${g.code}</div>
-      <div id="qr-${g.code}" style="display:inline-block"></div>
+  const masterUrl=location.origin+location.pathname+'?rooms='+created.map(g=>g.code).join(',');
+  body.innerHTML=`
+    <div style="width:100%;background:linear-gradient(135deg,var(--p1),var(--p2));border-radius:20px;padding:1.2rem;text-align:center;margin-bottom:.5rem">
+      <div style="font-weight:800;font-size:1rem;color:#fff;margin-bottom:.2rem">🎯 QR principal (à montrer à tous)</div>
+      <div style="font-size:.72rem;color:rgba(255,255,255,.85);margin-bottom:.6rem">Les joueurs choisissent leur groupe</div>
+      <div id="qr-master" style="display:inline-block;background:#fff;padding:.5rem;border-radius:12px"></div>
     </div>
-  `).join('');
+    ${created.map(g=>`
+      <div style="background:var(--bg2);border:1px solid var(--border);border-radius:16px;padding:.8rem;text-align:center;min-width:160px;flex:1;max-width:220px">
+        <div style="font-weight:700;font-size:.88rem;margin-bottom:.2rem">${esc(g.name)}</div>
+        <div style="font-size:.72rem;color:var(--muted);margin-bottom:.5rem">${g.size} places · ${g.code}</div>
+        <div id="qr-${g.code}" style="display:inline-block"></div>
+      </div>
+    `).join('')}
+  `;
   go('host-all-qr');
   // Render QR codes after DOM is ready
+  renderQRinto(document.getElementById('qr-master'),masterUrl);
   created.forEach(g=>{
     const url=location.origin+location.pathname+'?join='+g.code;
     renderQRinto(document.getElementById('qr-'+g.code),url);
@@ -1316,6 +1341,56 @@ function cReset(){
 // ════════════════════════════════════════════
 //  PLAYER: JOIN
 // ════════════════════════════════════════════
+// ════════════════════════════════════════════
+//  PLAYER: ROOM PICKER
+// ════════════════════════════════════════════
+let _pickListeners=[];
+function showRoomPicker(codes){
+  go('player-pick');
+  const list=document.getElementById('ppList');
+  list.innerHTML=codes.map((c,i)=>`
+    <div class="gcard" id="pp-${c}" onclick="pPickJoin('${c}')" style="cursor:pointer">
+      <div class="gcard-head">
+        <div class="gcard-num">${i+1}</div>
+        <div style="flex:1"><div class="gcard-title">Groupe ${i+1}</div><div class="gcard-sub" id="pp-sub-${c}">Chargement…</div></div>
+        <span class="gcard-status gs-lobby" id="pp-st-${c}">—</span>
+      </div>
+    </div>
+  `).join('');
+  // Clean up old listeners
+  _pickListeners.forEach(l=>l.ref.off('value',l.cb));
+  _pickListeners=[];
+  // Live player counts
+  codes.forEach(c=>{
+    const ref=db.ref(`rooms/${c}`);
+    const cb=ref.on('value',snap=>{
+      const d=snap.val();
+      const sub=document.getElementById(`pp-sub-${c}`),st=document.getElementById(`pp-st-${c}`),card=document.getElementById(`pp-${c}`);
+      if(!d||!sub){return;}
+      const ps=d.players||{};
+      const total=Object.keys(ps).length;
+      const max=d.config?.maxPlayers||8;
+      const full=total>=max;
+      const status=d.status||'lobby';
+      sub.textContent=`${total}/${max} joueur${total>1?'s':''} · Code ${c}`;
+      if(status==='lobby'){st.textContent=full?'Complet':'Ouvert';st.className='gcard-status '+(full?'gs-end':'gs-lobby');}
+      else if(status==='voting'){st.textContent='En cours';st.className='gcard-status gs-playing';}
+      else{st.textContent='Terminé';st.className='gcard-status gs-end';}
+      card.style.opacity=(full&&status==='lobby')?'0.5':'1';
+    });
+    _pickListeners.push({ref,cb});
+  });
+}
+async function pPickJoin(code){
+  // Clean listeners
+  _pickListeners.forEach(l=>l.ref.off('value',l.cb));
+  _pickListeners=[];
+  // Navigate to join flow with this code
+  go('player-join');
+  document.getElementById('jCode').value=code;
+  await jLookup();
+}
+
 async function jLookup(){
   const code=document.getElementById('jCode').value.trim().toUpperCase();
   if(code.length!==4){toast('Code à 4 lettres');return;}
@@ -1329,16 +1404,17 @@ async function jLookup(){
     localStorage.setItem('uc_pcode',code);
     pListen(code);return;
   }
-  if(d.status!=='lobby'){toast('Déjà lancée !');return;}
+  if(d.status==='end'){toast('Partie terminée');return;}
   P.code=code;
 
   if(d.openJoin){
-    // Mode admin: le joueur tape son prénom
+    // Mode admin: le joueur tape son prénom (même si partie en cours — permet join tardif/remplacement)
     const ps=d.players||{};
     const cur=Object.keys(ps).length, max=d.config?.maxPlayers||20;
     document.getElementById('jOpen').style.display='flex';
     document.getElementById('jPicker').style.display='none';
-    document.getElementById('jOpenInfo').textContent=`${cur}/${max} joueurs inscrits`;
+    const statusLabel=d.status==='lobby'?'en attente':'🎮 partie en cours';
+    document.getElementById('jOpenInfo').textContent=`${cur}/${max} joueurs · ${statusLabel}`;
     document.getElementById('jNameIn').value='';
     document.getElementById('jNameIn').focus();
   } else {
@@ -1369,18 +1445,47 @@ async function jOpenConfirm(){
   const name=(document.getElementById('jNameIn').value||'').trim();
   if(!name){toast('Entre ton prénom');return;}
   if(!P.code)return;
-  // Check max
   const snap=await db.ref(`rooms/${P.code}`).once('value');
   const d=snap.val();if(!d){toast('Salle introuvable');return;}
   const ps=d.players||{};
   const max=d.config?.maxPlayers||20;
+  const existing=ps[name];
+  const inProgress=d.status&&d.status!=='lobby';
+
+  // Case 1: name exists and player is connected → reject
+  if(existing&&existing.connected){toast('Ce prénom est déjà pris 😅');return;}
+
+  // Case 2: name exists and disconnected → reconnect (take over their identity + role)
+  if(existing&&!existing.connected){
+    await db.ref(`rooms/${P.code}/players/${name}/connected`).set(true);
+    P.name=name;
+    localStorage.setItem('uc_pcode',P.code);localStorage.setItem('uc_pname',P.name);
+    pListen(P.code);
+    toast('Reconnecté 👋');
+    return;
+  }
+
+  // Case 3: new name — check max
   if(Object.keys(ps).length>=max){toast(`Groupe plein (${max} max)`);return;}
-  if(ps[name]){toast('Ce prénom est déjà pris');return;}
-  // Create player entry + connect
-  await db.ref(`rooms/${P.code}/players/${name}`).set({connected:true,role:null,word:null,eliminated:false,vote:null,ready:false});
+
+  // Case 3a: new name in lobby → normal join
+  if(!inProgress){
+    await db.ref(`rooms/${P.code}/players/${name}`).set({connected:true,role:null,word:null,eliminated:false,vote:null,ready:false});
+    P.name=name;
+    localStorage.setItem('uc_pcode',P.code);localStorage.setItem('uc_pname',P.name);
+    pListen(P.code);
+    return;
+  }
+
+  // Case 3b: new name during game → join as civilian with civ word (already ready so skips role reveal? nope, let them see role)
+  await db.ref(`rooms/${P.code}/players/${name}`).set({
+    connected:true,role:'civilian',word:d.civWord||null,
+    eliminated:false,vote:null,ready:false,
+  });
   P.name=name;
   localStorage.setItem('uc_pcode',P.code);localStorage.setItem('uc_pname',P.name);
   pListen(P.code);
+  toast('Rejoint en tant que civil 👥');
 }
 
 // ════════════════════════════════════════════
