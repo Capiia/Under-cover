@@ -1161,6 +1161,24 @@ function renderGroup(){
     foot.innerHTML=`<button class="btn btn-p" onclick="hInstantReplay(null,{showToast:true})">Rejouer 🔁</button><button class="btn btn-ghost btn-sm" onclick="goHostDash()">← Mes groupes</button><button class="btn btn-r btn-sm" onclick="hDeleteGroup()" style="align-self:center">Supprimer</button>`;
     return;
   }
+
+  // ── UNKNOWN/LEGACY STATUS — recover by forcing this group to lobby ──
+  document.getElementById('hmTitle').textContent='État invalide';
+  body.innerHTML=`<div class="info">Status inconnu : <b>${esc(st)}</b><br>La salle a probablement des données d'une ancienne version.</div>`;
+  foot.innerHTML=`<button class="btn btn-p" onclick="hRecoverGroup()">Réinitialiser cette salle</button><button class="btn btn-r btn-sm" onclick="hDeleteGroup()" style="align-self:center">Supprimer</button>`;
+}
+
+async function hRecoverGroup(){
+  const code=H.cur;if(!code)return;
+  const d=H.data[code];if(!d)return;
+  const upd={status:'lobby',winner:null,lastElim:null,currentSpeaker:null};
+  Object.keys(d.players||{}).forEach(n=>{
+    upd[`players/${n}/role`]=null;upd[`players/${n}/word`]=null;
+    upd[`players/${n}/eliminated`]=false;upd[`players/${n}/vote`]=null;
+    upd[`players/${n}/ready`]=false;upd[`players/${n}/mwGuess`]=null;
+  });
+  await fbWrite(()=>db.ref(`rooms/${code}`).update(upd));
+  toast('Salle réinitialisée 🔄');
 }
 // Host group actions — hostToken is only set at room creation (immutable in Firebase rules)
 async function hRemovePlayer(n){
@@ -1592,6 +1610,11 @@ function pRoute(){
     else{rPVote();go('player-vote');}
   }
   else if(st==='end'){rPEnd();go('player-end');}
+  else {
+    // Unknown/legacy status (replay, mwguess, elimination, etc. from old code) — bail out
+    console.warn('Unknown status, resetting:',st);
+    pReset();
+  }
 }
 
 function rPWait(){
