@@ -733,15 +733,15 @@ function autoAdvance(code){
     } else clearTransition(_autoEndTimers,code);
   } else clearTransition(_autoEndTimers,code);
 
-  // end → new game when all connected players clicked Rejouer (ready=true)
+  // end → new game when all connected players clicked Rejouer (mwGuess='replay')
   if(d.status==='end'&&connected>=CONFIG.MIN_PLAYERS){
-    const ready=connectedPs.filter(([n,p])=>p.ready).length;
-    if(ready===connected){
+    const wantReplay=connectedPs.filter(([n,p])=>p.mwGuess==='replay').length;
+    if(wantReplay===connected){
       scheduleTransition(_autoReplayTimers,code,CONFIG.AUTO_REPLAY_DELAY_MS,()=>{
         const dd=H.data[code];
         if(dd?.status!=='end')return;
         const connP=Object.entries(dd.players||{}).filter(([n,p])=>p.connected);
-        if(connP.length>=CONFIG.MIN_PLAYERS&&connP.every(([n,p])=>p.ready))hInstantReplay(code);
+        if(connP.length>=CONFIG.MIN_PLAYERS&&connP.every(([n,p])=>p.mwGuess==='replay'))hInstantReplay(code);
       });
     } else clearTransition(_autoReplayTimers,code);
   } else clearTransition(_autoReplayTimers,code);
@@ -758,8 +758,11 @@ function clearTransition(bucket,code){
 async function transitionToEnd(code){
   const d=H.data[code];if(!d)return;
   const upd={status:'end',winner:'reveal'};
-  // Reset ready=false so end-screen replay votes start fresh
-  Object.keys(d.players||{}).forEach(n=>{upd[`players/${n}/ready`]=false;});
+  // Reset ready + mwGuess so end-screen replay votes start from a clean slate
+  Object.keys(d.players||{}).forEach(n=>{
+    upd[`players/${n}/ready`]=false;
+    upd[`players/${n}/mwGuess`]=null;
+  });
   await fbWrite(()=>db.ref(`rooms/${code}`).update(upd));
 }
 
@@ -1186,11 +1189,14 @@ async function hStartGroup(codeArg){
   upd.status='voting';upd.currentSpeaker=null;upd.winner=null;upd.lastElim=null;
   await db.ref(`rooms/${code}`).update(upd);
 }
-// End the game: transition to end state, reset ready=false so replay votes start fresh.
+// End the game: transition to end state, reset ready + mwGuess so replay votes start fresh.
 async function hEndGroup(){
   const d=H.data[H.cur];if(!d)return;
   const upd={status:'end',winner:'reveal'};
-  Object.keys(d.players||{}).forEach(n=>{upd[`players/${n}/ready`]=false;});
+  Object.keys(d.players||{}).forEach(n=>{
+    upd[`players/${n}/ready`]=false;
+    upd[`players/${n}/mwGuess`]=null;
+  });
   await fbWrite(()=>db.ref(`rooms/${H.cur}`).update(upd));
 }
 
@@ -1330,7 +1336,14 @@ function cRenderGame(){
     const allVoted=voted===active.length;
     const confirmed=active.filter(n=>ps[n]?.mwGuess==='confirmed').length;
     const allConfirmed=allVoted&&confirmed===active.length;
-    if(allConfirmed){C.ref.update({status:'end',winner:'reveal'});return;}
+    if(allConfirmed){
+      const endUpd={status:'end',winner:'reveal'};
+      Object.keys(ps).forEach(n=>{
+        endUpd[`players/${n}/ready`]=false;
+        endUpd[`players/${n}/mwGuess`]=null;
+      });
+      C.ref.update(endUpd);return;
+    }
     const maxV=Math.max(...Object.values(counts),0);
     const sorted=Object.entries(counts).sort((a,b)=>b[1]-a[1]);
     document.getElementById('cgEy').textContent='Vote';
@@ -1353,70 +1366,42 @@ function cRenderGame(){
     document.getElementById('cgEy').textContent='Fin';
     document.getElementById('cgTitle').textContent=info.title;
     document.getElementById('cgSub').textContent='';
-    body.innerHTML=`<div class="wcard"><div style="font-size:2.5rem">${info.emoji}</div><div style="font-size:1.2rem;font-weight:800;margin:.2rem 0">${info.title}</div><div style="font-size:.82rem;color:var(--muted)">${info.sub}</div></div><p class="slbl">Récap</p>${revealHTML(ps,d)}`;
-    foot.innerHTML=`<button class="btn btn-p" onclick="cAskReplay()">Proposer Rejouer 🔁</button><button class="btn btn-ghost" onclick="cReset()">← Retour</button>`;
+    const connected=Object.values(ps).filter(p=>p.connected);
+    const wantReplay=connected.filter(p=>p.mwGuess==='replay').length;
+    body.innerHTML=`<div class="wcard"><div style="font-size:2.5rem">${info.emoji}</div><div style="font-size:1.2rem;font-weight:800;margin:.2rem 0">${info.title}</div><div style="font-size:.82rem;color:var(--muted)">${info.sub}</div></div><p class="slbl">Récap</p>${revealHTML(ps,d)}<p style="text-align:center;font-size:.82rem;color:var(--muted);margin-top:.5rem">${wantReplay}/${connected.length} veulent rejouer</p>`;
+    foot.innerHTML=`<button class="btn btn-p" onclick="cInstantReplay()">Rejouer 🔁</button><button class="btn btn-ghost" onclick="cReset()">← Retour</button>`;
     if(info.theme)confetti(info.theme);
     return;
   }
-
-  if(st==='replay'){
-    document.getElementById('cgEy').textContent='Rejouer ?';
-    document.getElementById('cgTitle').textContent='En attente… 🔁';
-    document.getElementById('cgSub').textContent='';
-    const readyCount=names.filter(n=>ps[n]?.ready).length;
-    body.innerHTML=`
-      <div class="info">${readyCount===names.length?'✅ Tout le monde est prêt !':'⏳ '+readyCount+'/'+names.length+' prêts'}</div>
-      ${names.map(n=>`<div class="lp"><div class="dot ${ps[n]?.ready?'on':'off'}"></div><div class="av sm">${esc(n[0]).toUpperCase()}</div><div style="flex:1;font-size:.88rem">${esc(n)}</div><div style="font-size:.75rem;color:var(--muted)">${ps[n]?.ready?'Prêt ✓':'…'}</div></div>`).join('')}
-    `;
-    foot.innerHTML=`<button class="btn btn-p" onclick="cDoReplay()" ${readyCount===names.length?'':'disabled'}>Relancer ! 🚀</button><button class="btn btn-ghost btn-sm" onclick="cReset()">← Retour</button>`;
-    return;
-  }
 }
 
-async function cSetSpk(n){const cur=C.data?.currentSpeaker;await C.ref.update({currentSpeaker:cur===n?null:n});}
-async function cGoVote(){
-  const upd={status:'voting',currentSpeaker:null};
-  Object.keys(C.data?.players||{}).forEach(n=>{upd[`players/${n}/vote`]=null;});
-  await C.ref.update(upd);
-}
-function cSelElim(n){C.selElim=n;cRenderGame();}
-async function cConfirmElim(){
-  if(!C.selElim)return;const p=C.data?.players?.[C.selElim];if(!p)return;
-  await C.ref.update({status:'elimination',lastElim:{name:C.selElim,role:p.role,word:p.word||null},[`players/${C.selElim}/eliminated`]:true});
-  C.selElim=null;
-}
-async function cGoMwGuess(){await C.ref.update({status:'mwguess'});}
-async function cResolveMwGuess(correct){
-  const win=correct?'mrwhite':(checkWin(C.data?.players)||'civilians');
-  await C.ref.update({status:'end',winner:win});
-}
-async function cAfterElim(){
-  const win=checkWin(C.data.players);
-  if(win){await C.ref.update({status:'end',winner:win});return;}
-  const upd={status:'voting',currentSpeaker:null};
-  Object.keys(C.data.players||{}).forEach(n=>{upd[`players/${n}/vote`]=null;});
-  await C.ref.update(upd);
-}
 async function cEndGame(){
   const upd={status:'end',winner:'reveal'};
-  Object.keys(C.data?.players||{}).forEach(n=>{upd[`players/${n}/ready`]=false;});
-  await fbWrite(()=>C.ref.update(upd));
-}
-async function cAskReplay(){
-  const upd={status:'replay'};
-  Object.keys(C.data?.players||{}).forEach(n=>{upd[`players/${n}/ready`]=false;});
-  await C.ref.update(upd);
-}
-async function cDoReplay(){
-  const idx=rnd(PAIRS.length),pair=PAIRS[idx]||PAIRS[0];
-  const upd={status:'lobby',winner:null,lastElim:null,civWord:pair[0],spyWord:pair[1],'config/pairIdx':idx};
   Object.keys(C.data?.players||{}).forEach(n=>{
-    upd[`players/${n}/role`]=null;upd[`players/${n}/word`]=null;
-    upd[`players/${n}/eliminated`]=false;upd[`players/${n}/vote`]=null;
     upd[`players/${n}/ready`]=false;
     upd[`players/${n}/mwGuess`]=null;
   });
-  await C.ref.update(upd);
+  await fbWrite(()=>C.ref.update(upd));
+}
+
+async function cInstantReplay(){
+  const d=C.data;if(!d)return;
+  const cfg=d.config||{};
+  const connected=Object.entries(d.players||{}).filter(([n,p])=>p.connected).map(([n])=>n);
+  if(connected.length<CONFIG.MIN_PLAYERS){toast(`Min ${CONFIG.MIN_PLAYERS} joueurs connectés`);return;}
+  const names=shuffle(connected);
+  const idx=rnd(PAIRS.length),pair=PAIRS[idx]||PAIRS[0];
+  const upd={status:'voting',winner:null,lastElim:null,currentSpeaker:null,civWord:pair[0],spyWord:pair[1],'config/pairIdx':idx};
+  names.forEach((n,i)=>{
+    let role='civilian',word=pair[0];
+    if(i<(cfg.uc||1)){role='undercover';word=pair[1];}
+    else if(cfg.mw&&i===cfg.uc){role='mrwhite';word=null;}
+    upd[`players/${n}/role`]=role;upd[`players/${n}/word`]=word||null;
+    upd[`players/${n}/ready`]=false;upd[`players/${n}/vote`]=null;upd[`players/${n}/eliminated`]=false;
+    upd[`players/${n}/mwGuess`]=null;
+  });
+  Object.keys(d.players||{}).forEach(n=>{if(!connected.includes(n))upd[`players/${n}`]=null;});
+  await fbWrite(()=>C.ref.update(upd));
 }
 function cReset(){
   if(C.unsub&&C.ref)C.ref.off('value',C.unsub);
@@ -1697,10 +1682,10 @@ async function pConfirmResults(){
   await fbWrite(()=>db.ref(`rooms/${P.code}/players/${P.name}/mwGuess`).set('confirmed'));
 }
 
-// Player clicks "Rejouer" on the end screen — votes yes. Host's autoAdvance detects
-// when all connected players agree and auto-starts a new round.
+// Player clicks "Rejouer" on the end screen. We use mwGuess='replay' (not ready) to avoid
+// conflict with the role-confirm flag from voting phase.
 async function pEndReplay(){
-  await fbWrite(()=>db.ref(`rooms/${P.code}/players/${P.name}/ready`).set(true));
+  await fbWrite(()=>db.ref(`rooms/${P.code}/players/${P.name}/mwGuess`).set('replay'));
 }
 
 function rPEnd(){
@@ -1714,10 +1699,12 @@ function rPEnd(){
   document.getElementById('peReveal').innerHTML=revealHTML(d.players,d);
   const ps=d.players||{},me=ps[P.name];
   const connected=Object.values(ps).filter(p=>p.connected);
-  const ready=connected.filter(p=>p.ready).length;
-  document.getElementById('peReplayInfo').textContent=`${ready}/${connected.length} veulent rejouer`;
+  // "Wants replay" = mwGuess === 'replay' (dedicated field, avoids collision with role-ready)
+  const wantReplay=connected.filter(p=>p.mwGuess==='replay').length;
+  const iWantReplay=me?.mwGuess==='replay';
+  document.getElementById('peReplayInfo').textContent=`${wantReplay}/${connected.length} veulent rejouer`;
   const foot=document.getElementById('peFoot');
-  if(me?.ready){
+  if(iWantReplay){
     foot.innerHTML=`<p style="text-align:center;color:var(--green);font-weight:600">✓ Tu veux rejouer — en attente des autres…</p><button class="btn btn-ghost btn-sm" onclick="pReset()">Quitter</button>`;
   } else {
     foot.innerHTML=`<button class="btn btn-p" onclick="pEndReplay()">Rejouer 🔁</button><button class="btn btn-ghost btn-sm" onclick="pReset()">Quitter</button>`;
