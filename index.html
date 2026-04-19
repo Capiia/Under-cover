@@ -1478,7 +1478,6 @@ function rPVoteSent(){
   const active=Object.keys(ps).filter(n=>!ps[n].eliminated);
   const voted=active.filter(n=>ps[n]?.vote).length;
   const allVoted=voted===active.length;
-  document.getElementById('pvFor').textContent=me.vote;
 
   if(!allVoted){
     document.getElementById('pvsTitle').textContent='🗳️ Vote envoyé !';
