@@ -82,14 +82,17 @@
   {"civ": "Zelda",            "spy": "Link",              "cat": "🎮 Jeux vidéo"},
   {"civ": "Fortnite",         "spy": "Minecraft",         "cat": "🎮 Jeux vidéo"},
 
+  {"civ": "Omar Sy",          "spy": "Jean Dujardin",     "cat": "🎬 Acteurs FR"},
+  {"civ": "Marion Cotillard", "spy": "Audrey Tautou",     "cat": "🎬 Acteurs FR"},
   {"civ": "Vincent Lacoste",  "spy": "Pierre Niney",      "cat": "🎬 Acteurs FR"},
-  {"civ": "Adèle Exarchopoulos","spy": "Lou de Laâge",    "cat": "🎬 Acteurs FR"},
-  {"civ": "Théo Christine",   "spy": "François Civil",    "cat": "🎬 Acteurs FR"},
-  {"civ": "Camille Razat",    "spy": "Lily Collins",      "cat": "🎬 Emily in Paris"},
+  {"civ": "Adèle Exarchopoulos","spy": "Léa Seydoux",     "cat": "🎬 Acteurs FR"},
+  {"civ": "Tahar Rahim",      "spy": "Vincent Cassel",    "cat": "🎬 Acteurs FR"},
 
   {"civ": "Stranger Things",  "spy": "Squid Game",        "cat": "📺 Séries"},
-  {"civ": "Wednesday",        "spy": "You",               "cat": "📺 Séries"},
-  {"civ": "The Bear",         "spy": "Succession",        "cat": "📺 Séries"},
+  {"civ": "Friends",          "spy": "The Office",        "cat": "📺 Séries"},
+  {"civ": "Game of Thrones",  "spy": "Peaky Blinders",    "cat": "📺 Séries"},
+  {"civ": "Breaking Bad",     "spy": "Narcos",            "cat": "📺 Séries"},
   {"civ": "Lupin",            "spy": "La Casa de Papel",  "cat": "📺 Séries"},
-  {"civ": "Emily in Paris",   "spy": "Heartstopper",      "cat": "📺 Séries"}
+  {"civ": "How I Met Your Mother","spy": "Brooklyn Nine-Nine","cat": "📺 Séries"},
+  {"civ": "Emily in Paris",   "spy": "Dix pour cent",     "cat": "📺 Séries"}
 ]
