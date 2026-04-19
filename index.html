@@ -1129,7 +1129,10 @@ function renderGroup(){
 
     // Auto-transition to end when all confirmed (only if at least 1 active player)
     if(allConfirmed&&active.length>0){
-      db.ref(`rooms/${code}`).update({status:'end',winner:'reveal'});
+      // Reset ready=false so it can be reused for "want to replay" tracking on end screen
+      const upd={status:'end',winner:'reveal'};
+      Object.keys(ps).forEach(n=>{upd[`players/${n}/ready`]=false;});
+      db.ref(`rooms/${code}`).update(upd);
       return;
     }
 
