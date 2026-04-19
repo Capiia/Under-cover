@@ -909,7 +909,7 @@ function renderGroup(){
   const st=d.status;
   const ps=d.players||{};
   const names=Object.keys(ps);
-  const active=names.filter(n=>!ps[n].eliminated);
+  const active=names.filter(n=>!ps[n].eliminated&&ps[n].connected);
 
   document.getElementById('hmEy').textContent=g?.name||'Groupe';
   document.getElementById('hmSub').textContent=`Code: ${code} · ${names.length} joueurs`;
@@ -1210,7 +1210,7 @@ async function csStart(){
 
 function cRenderGame(){
   const d=C.data,st=d.status,ps=d.players||{},names=Object.keys(ps);
-  const active=names.filter(n=>!ps[n].eliminated);
+  const active=names.filter(n=>!ps[n].eliminated&&ps[n].connected);
   const body=document.getElementById('cgBody'),foot=document.getElementById('cgFoot');
 
   if(st==='voting'){
@@ -1393,6 +1393,10 @@ function pListen(code){
     if(!snap.exists()){pReset();return;}
     P.data=snap.val();pRoute();
   });
+  // Mark disconnected when the tab closes / connection drops
+  if(P.name){
+    db.ref(`rooms/${code}/players/${P.name}/connected`).onDisconnect().set(false);
+  }
 }
 function pRoute(){
   const d=P.data;if(!d)return;
@@ -1475,7 +1479,7 @@ async function pVote(){if(!P.selVote)return;await db.ref(`rooms/${P.code}/player
 
 function rPVoteSent(){
   const d=P.data,ps=d.players||{},me=ps[P.name];
-  const active=Object.keys(ps).filter(n=>!ps[n].eliminated);
+  const active=Object.keys(ps).filter(n=>!ps[n].eliminated&&ps[n].connected);
   const voted=active.filter(n=>ps[n]?.vote).length;
   const allVoted=voted===active.length;
 
