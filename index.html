@@ -496,18 +496,6 @@
 </div>
 
 <!-- ══════════════ PLAYER: ROUND ══════════════ -->
-<div id="player-round" class="screen">
-  <div class="sh">
-    <div class="ey" id="plrEy">Tour 1 / 2</div>
-    <h1 id="plrTitle">Discussion 🗣️</h1>
-    <p class="sub" id="plrSub">Décris ton mot sans le dire.</p>
-  </div>
-  <div class="sb">
-    <div class="info" id="plrInfo"></div>
-    <div id="plrList" style="display:flex;flex-direction:column;gap:.45rem"></div>
-  </div>
-</div>
-
 <!-- ══════════════ PLAYER: VOTE ══════════════ -->
 <div id="player-vote" class="screen">
   <div class="sh"><div class="ey">Vote</div><h1>Qui est l'espion ? ☠️</h1><p class="sub">Un seul vote.</p></div>
@@ -522,45 +510,6 @@
     <p style="font-size:.78rem;color:var(--muted);text-align:center">Tu as voté : <b id="pvFor">—</b></p>
   </div>
   <div class="sf" id="pvsFoot"></div>
-</div>
-
-<!-- ══════════════ PLAYER: ELIM ══════════════ -->
-<div id="player-elim" class="screen scenter" style="gap:1.2rem">
-  <div class="elim-card">
-    <div class="av lg" id="peAv">?</div>
-    <div style="font-size:1.4rem;font-weight:800" id="peName">—</div>
-    <div class="badge" id="peBadge">—</div>
-    <p style="font-size:.8rem;color:var(--muted);text-align:center" id="peSub"></p>
-  </div>
-  <p style="font-size:.75rem;color:var(--muted)" class="pulse">En attente de la suite…</p>
-</div>
-
-<!-- ══════════════ PLAYER: MR WHITE GUESS ══════════════ -->
-<div id="player-mwguess" class="screen scenter" style="gap:1.2rem">
-  <div style="font-size:2.2rem">🤍</div>
-  <div style="text-align:center"><h2 style="font-size:1.3rem">Dernière chance !</h2><p style="font-size:.82rem;color:var(--muted);margin-top:.3rem;max-width:240px">Devine le mot des civils et tu gagnes.</p></div>
-  <input class="inp" id="mwIn" placeholder="Le mot des civils ?" style="text-align:center;max-width:280px">
-  <button class="btn btn-g" onclick="mwGuess()" style="max-width:280px">Révéler 🎰</button>
-</div>
-
-<!-- ══════════════ PLAYER: MW WAIT ══════════════ -->
-<div id="player-mwwait" class="screen scenter">
-  <div style="font-size:2.2rem">🤍</div>
-  <p style="font-size:1rem;font-weight:700">Mr. White joue sa chance…</p>
-  <p style="font-size:.8rem;color:var(--muted)" class="pulse">Suspense.</p>
-</div>
-
-<!-- ══════════════ PLAYER: REPLAY ══════════════ -->
-<div id="player-replay" class="screen scenter" style="gap:1rem">
-  <div style="font-size:2.2rem">🔁</div>
-  <p style="font-size:1.1rem;font-weight:700">On rejoue ?</p>
-  <p style="font-size:.85rem;color:var(--muted);text-align:center;max-width:260px" id="prpInfo">—</p>
-  <div id="prpChoice" style="display:flex;flex-direction:column;gap:.5rem;width:100%;max-width:260px">
-    <button class="btn btn-p" onclick="pConfirmReplay()">Oui, rejouer 🔁</button>
-    <button class="btn btn-ghost btn-sm" onclick="pDeclineReplay()">Non, quitter</button>
-  </div>
-  <p id="prpDone" style="display:none;font-size:.85rem;color:var(--green);font-weight:600;text-align:center">✓ C'est bon ! En attente des autres…</p>
-  <p id="prpTimer" style="font-size:.85rem;color:var(--muted);font-weight:600">—</p>
 </div>
 
 <!-- ══════════════ PLAYER: END ══════════════ -->
@@ -592,24 +541,27 @@ firebase.initializeApp({
 const db=firebase.database();
 
 // ════════════════════════════════════════════
-//  ROOM LIMITS & CLEANUP
+//  CONFIG
 // ════════════════════════════════════════════
-const MAX_ROOMS=50;
-const ROOM_TTL_MS=24*60*60*1000; // 24h
-
-async function cleanupExpiredRooms(){
-  // Cleanup requires reading all /rooms — only works with admin SDK or relaxed rules.
-  // Skip client-side cleanup; expired rooms are harmless and can be cleaned manually.
-}
+const CONFIG={
+  MIN_PLAYERS:4,
+  DEFAULT_MAX_PLAYERS:8,
+  MAX_PLAYERS_PER_GROUP:8,
+  AUTO_START_DELAY_MS:1500,   // delay after lobby fills before auto-launch
+  AUTO_REPLAY_DELAY_MS:1000,  // delay after all say replay before relaunch
+  ROOM_TTL_MS:24*60*60*1000,
+};
 
 async function canCreateRoom(){
-  // Cannot read /rooms list without permission — skip room count check.
-  // The MAX_ROOMS limit is a soft guard; Firebase rules are the real gate.
+  // Cannot read /rooms list without permission — Firebase rules are the real gate.
   return true;
 }
 
-// Run cleanup on app load
-cleanupExpiredRooms();
+// Wrap Firebase writes to catch network errors and toast the user
+async function fbWrite(fn){
+  try{return await fn();}
+  catch(e){console.error('Firebase write failed:',e);toast('Erreur réseau — réessaie');throw e;}
+}
 
 // ════════════════════════════════════════════
 //  WORDS
@@ -743,57 +695,88 @@ function hListen(code){
     if(document.getElementById('host-dash').classList.contains('active')) renderDash();
     if(H.cur===code&&document.getElementById('host-group').classList.contains('active')) renderGroup();
     // Auto-start when lobby is full (connected players reach maxPlayers)
-    maybeAutoStart(code);
+    autoAdvance(code);
   });
   H.listeners[code]={ref,cb};
 }
 
 const _autoStartTimers={};
 const _autoReplayTimers={};
-function maybeAutoStart(code){
+const _autoEndTimers={};
+
+// Auto-advance game state based on player actions, independent of host's current view.
+// Triggered on every room data change.
+function autoAdvance(code){
   const d=H.data[code];if(!d)return;
   const ps=d.players||{};
   const connectedPs=Object.entries(ps).filter(([n,p])=>p.connected);
   const connected=connectedPs.length;
-  const max=d.config?.maxPlayers||8;
+  const max=d.config?.maxPlayers||CONFIG.DEFAULT_MAX_PLAYERS;
 
-  // Auto-start from lobby when we reach the target size (>=4)
-  if(d.status==='lobby'&&connected>=max&&connected>=4){
-    if(!_autoStartTimers[code]){
-      _autoStartTimers[code]=setTimeout(()=>{
-        delete _autoStartTimers[code];
-        const dd=H.data[code];
-        if(dd?.status==='lobby'){
-          const c=Object.values(dd.players||{}).filter(p=>p.connected).length;
-          if(c>=4)hStartGroup(code);
-        }
-      },1500);
-    }
-  } else if(_autoStartTimers[code]){clearTimeout(_autoStartTimers[code]);delete _autoStartTimers[code];}
+  // lobby → voting when lobby is full
+  if(d.status==='lobby'&&connected>=max&&connected>=CONFIG.MIN_PLAYERS){
+    scheduleTransition(_autoStartTimers,code,CONFIG.AUTO_START_DELAY_MS,()=>{
+      const dd=H.data[code];
+      if(dd?.status!=='lobby')return;
+      const c=Object.values(dd.players||{}).filter(p=>p.connected).length;
+      if(c>=CONFIG.MIN_PLAYERS)hStartGroup(code);
+    });
+  } else clearTransition(_autoStartTimers,code);
 
-  // Auto-replay from end state when all connected players said "Rejouer" (ready=true)
-  if(d.status==='end'&&connected>=4){
+  // voting → end when all connected players voted + confirmed results
+  if(d.status==='voting'&&connected>=CONFIG.MIN_PLAYERS){
+    const voted=connectedPs.filter(([n,p])=>!p.eliminated&&p.vote).length;
+    const active=connectedPs.filter(([n,p])=>!p.eliminated).length;
+    const confirmed=connectedPs.filter(([n,p])=>!p.eliminated&&p.mwGuess==='confirmed').length;
+    if(active>0&&voted===active&&confirmed===active){
+      scheduleTransition(_autoEndTimers,code,0,()=>transitionToEnd(code));
+    } else clearTransition(_autoEndTimers,code);
+  } else clearTransition(_autoEndTimers,code);
+
+  // end → new game when all connected players clicked Rejouer (ready=true)
+  if(d.status==='end'&&connected>=CONFIG.MIN_PLAYERS){
     const ready=connectedPs.filter(([n,p])=>p.ready).length;
     if(ready===connected){
-      if(!_autoReplayTimers[code]){
-        _autoReplayTimers[code]=setTimeout(()=>{
-          delete _autoReplayTimers[code];
-          const dd=H.data[code];
-          if(dd?.status==='end'){
-            const connP=Object.entries(dd.players||{}).filter(([n,p])=>p.connected);
-            if(connP.length>=4&&connP.every(([n,p])=>p.ready))hInstantReplayCode(code);
-          }
-        },1000);
-      }
-    } else if(_autoReplayTimers[code]){clearTimeout(_autoReplayTimers[code]);delete _autoReplayTimers[code];}
-  } else if(_autoReplayTimers[code]){clearTimeout(_autoReplayTimers[code]);delete _autoReplayTimers[code];}
+      scheduleTransition(_autoReplayTimers,code,CONFIG.AUTO_REPLAY_DELAY_MS,()=>{
+        const dd=H.data[code];
+        if(dd?.status!=='end')return;
+        const connP=Object.entries(dd.players||{}).filter(([n,p])=>p.connected);
+        if(connP.length>=CONFIG.MIN_PLAYERS&&connP.every(([n,p])=>p.ready))hInstantReplay(code);
+      });
+    } else clearTransition(_autoReplayTimers,code);
+  } else clearTransition(_autoReplayTimers,code);
 }
 
-async function hInstantReplayCode(code){
+function scheduleTransition(bucket,code,delay,fn){
+  if(bucket[code])return;
+  bucket[code]=setTimeout(()=>{delete bucket[code];fn();},delay);
+}
+function clearTransition(bucket,code){
+  if(bucket[code]){clearTimeout(bucket[code]);delete bucket[code];}
+}
+
+async function transitionToEnd(code){
+  const d=H.data[code];if(!d)return;
+  const upd={status:'end',winner:'reveal'};
+  // Reset ready=false so end-screen replay votes start fresh
+  Object.keys(d.players||{}).forEach(n=>{upd[`players/${n}/ready`]=false;});
+  await fbWrite(()=>db.ref(`rooms/${code}`).update(upd));
+}
+
+// Start a new game round in the given room (or H.cur by default).
+// - Keeps only connected players
+// - Picks new word pair
+// - Re-assigns roles
+// - Goes straight to status='voting'
+async function hInstantReplay(codeArg,opts={}){
+  const code=codeArg||H.cur;if(!code)return;
   const d=H.data[code];if(!d)return;
   const cfg=d.config||{};
   const connected=Object.entries(d.players||{}).filter(([n,p])=>p.connected).map(([n])=>n);
-  if(connected.length<4)return;
+  if(connected.length<CONFIG.MIN_PLAYERS){
+    if(opts.showToast)toast(`Min ${CONFIG.MIN_PLAYERS} joueurs connectés`);
+    return;
+  }
   const names=shuffle(connected);
   const idx=rnd(PAIRS.length),pair=PAIRS[idx]||PAIRS[0];
   const upd={
@@ -808,8 +791,10 @@ async function hInstantReplayCode(code){
     upd[`players/${n}/ready`]=false;upd[`players/${n}/vote`]=null;upd[`players/${n}/eliminated`]=false;
     upd[`players/${n}/mwGuess`]=null;
   });
+  // Drop disconnected players from the room
   Object.keys(d.players||{}).forEach(n=>{if(!connected.includes(n))upd[`players/${n}`]=null;});
-  await db.ref(`rooms/${code}`).update(upd);
+  await fbWrite(()=>db.ref(`rooms/${code}`).update(upd));
+  if(opts.showToast)toast('Nouvelle partie 🚀');
 }
 
 function renderDash(){
@@ -1118,6 +1103,7 @@ function renderGroup(){
   }
 
   // ── VOTING (temps réel) ──
+  // (auto-transition to 'end' is handled by autoAdvance so it runs even when host isn't on this group)
   if(st==='voting'){
     const counts={};active.forEach(n=>{counts[n]=0;});
     const whoVotedFor={};
@@ -1125,17 +1111,6 @@ function renderGroup(){
     const voted=active.filter(n=>ps[n]?.vote).length;
     const allVoted=active.length>0&&voted===active.length;
     const confirmed=active.filter(n=>ps[n]?.mwGuess==='confirmed').length;
-    const allConfirmed=allVoted&&confirmed===active.length;
-
-    // Auto-transition to end when all confirmed (only if at least 1 active player)
-    if(allConfirmed&&active.length>0){
-      // Reset ready=false so it can be reused for "want to replay" tracking on end screen
-      const upd={status:'end',winner:'reveal'};
-      Object.keys(ps).forEach(n=>{upd[`players/${n}/ready`]=false;});
-      db.ref(`rooms/${code}`).update(upd);
-      return;
-    }
-
     const maxV=Math.max(...Object.values(counts),0);
     const sorted=Object.entries(counts).sort((a,b)=>b[1]-a[1]);
 
@@ -1170,34 +1145,6 @@ function renderGroup(){
     return;
   }
 
-  // ── REPLAY WAIT ──
-  if(st==='replay'){
-    const activeNames=names.filter(n=>ps[n].connected);
-    const readyCount=activeNames.filter(n=>ps[n]?.ready).length;
-    const startTime=parseInt(d.currentSpeaker)||Date.now();
-    const elapsed=Math.floor((Date.now()-startTime)/1000);
-    const remaining=Math.max(0,60-elapsed);
-    const allReady=activeNames.length>0&&readyCount===activeNames.length;
-    // Auto-launch when all ready or timer expired
-    if(allReady||remaining===0){
-      if(activeNames.length>=4){hDoReplay();return;}
-      // Not enough ready players — show message
-    }
-    // Schedule re-render for timer update
-    if(!_hReplayInterval){
-      _hReplayInterval=setInterval(()=>{if(H.cur&&H.data[H.cur]?.status==='replay')renderGroup();else{clearInterval(_hReplayInterval);_hReplayInterval=null;}},1000);
-    }
-    document.getElementById('hmTitle').textContent='Rejouer ? 🔁';
-    body.innerHTML=`
-      <div class="info">⏱️ ${remaining}s · ${readyCount}/${activeNames.length} ont dit oui</div>
-      <p class="slbl">Joueurs connectés</p>
-      ${activeNames.map(n=>`<div class="lp"><div class="dot ${ps[n]?.ready?'on':'off'}"></div><div class="av sm">${esc(n[0]).toUpperCase()}</div><div style="flex:1;font-size:.88rem">${esc(n)}</div><div style="font-size:.75rem;color:${ps[n]?.ready?'var(--green)':'var(--muted)'}">${ps[n]?.ready?'Oui ✓':'…'}</div></div>`).join('')}
-      ${activeNames.length<4?`<div class="info" style="color:var(--r);margin-top:.6rem">Min 4 joueurs connectés pour relancer</div>`:''}
-    `;
-    foot.innerHTML=`<button class="btn btn-p" onclick="hDoReplay()" ${activeNames.length<4?'disabled':''}>Relancer maintenant 🚀</button><button class="btn btn-ghost btn-sm" onclick="goHostDash()">← Mes groupes</button>`;
-    return;
-  }
-
   // ── END ──
   if(st==='end'){
     document.getElementById('hmTitle').textContent='Résultats 📋';
@@ -1207,40 +1154,10 @@ function renderGroup(){
       <p class="slbl">Récap</p>
       ${revealHTML(ps,d)}
     `;
-    foot.innerHTML=`<button class="btn btn-p" onclick="hInstantReplay()">Rejouer 🔁</button><button class="btn btn-ghost btn-sm" onclick="goHostDash()">← Mes groupes</button><button class="btn btn-r btn-sm" onclick="hDeleteGroup()" style="align-self:center">Supprimer</button>`;
+    foot.innerHTML=`<button class="btn btn-p" onclick="hInstantReplay(null,{showToast:true})">Rejouer 🔁</button><button class="btn btn-ghost btn-sm" onclick="goHostDash()">← Mes groupes</button><button class="btn btn-r btn-sm" onclick="hDeleteGroup()" style="align-self:center">Supprimer</button>`;
     return;
   }
 }
-let _hReplayInterval=null;
-
-async function hInstantReplay(){
-  const code=H.cur,d=H.data[code];if(!d)return;
-  const cfg=d.config||{};
-  // Keep only connected players
-  const connected=Object.entries(d.players||{}).filter(([n,p])=>p.connected).map(([n])=>n);
-  if(connected.length<4){toast('Min 4 joueurs connectés');return;}
-  const names=shuffle(connected);
-  // Pick new word pair
-  const idx=rnd(PAIRS.length),pair=PAIRS[idx]||PAIRS[0];
-  const upd={
-    status:'voting',winner:null,lastElim:null,currentSpeaker:null,
-    civWord:pair[0],spyWord:pair[1],'config/pairIdx':idx,
-  };
-  // Assign new roles
-  names.forEach((n,i)=>{
-    let role='civilian',word=pair[0];
-    if(i<(cfg.uc||1)){role='undercover';word=pair[1];}
-    else if(cfg.mw&&i===cfg.uc){role='mrwhite';word=null;}
-    upd[`players/${n}/role`]=role;upd[`players/${n}/word`]=word||null;
-    upd[`players/${n}/ready`]=false;upd[`players/${n}/vote`]=null;upd[`players/${n}/eliminated`]=false;
-    upd[`players/${n}/mwGuess`]=null;
-  });
-  // Remove disconnected players
-  Object.keys(d.players||{}).forEach(n=>{if(!connected.includes(n))upd[`players/${n}`]=null;});
-  await db.ref(`rooms/${code}`).update(upd);
-  toast('Nouvelle partie 🚀');
-}
-
 // Host group actions — hostToken is only set at room creation (immutable in Firebase rules)
 async function hRemovePlayer(n){
   if(!H.cur)return;
@@ -1269,49 +1186,12 @@ async function hStartGroup(codeArg){
   upd.status='voting';upd.currentSpeaker=null;upd.winner=null;upd.lastElim=null;
   await db.ref(`rooms/${code}`).update(upd);
 }
-function hSelElim(n){
-  H.selElim=n;renderGroup();
-}
-async function hConfirmElim(){
-  if(!H.selElim||!H.cur)return;const d=H.data[H.cur],p=d?.players?.[H.selElim];if(!p)return;
-  await db.ref(`rooms/${H.cur}`).update({
-    status:'elimination',lastElim:{name:H.selElim,role:p.role,word:p.word||null},
-    [`players/${H.selElim}/eliminated`]:true,
-  });
-  H.selElim=null;
-}
-async function hGoMwGuess(){await db.ref(`rooms/${H.cur}`).update({status:'mwguess'});}
-async function hResolveMwGuess(correct){
-  const win=correct?'mrwhite':(checkWin(H.data[H.cur]?.players)||'civilians');
-  await db.ref(`rooms/${H.cur}`).update({status:'end',winner:win});
-}
-async function hAfterElim(){
-  const d=H.data[H.cur];
-  const win=checkWin(d.players);
-  if(win){await db.ref(`rooms/${H.cur}`).update({status:'end',winner:win});return;}
-  const upd={status:'voting',currentSpeaker:null};
-  Object.keys(d.players||{}).forEach(n=>{upd[`players/${n}/vote`]=null;});
-  await db.ref(`rooms/${H.cur}`).update(upd);
-}
+// End the game: transition to end state, reset ready=false so replay votes start fresh.
 async function hEndGroup(){
-  await db.ref(`rooms/${H.cur}`).update({status:'end',winner:'reveal'});
-}
-async function hAskReplay(){
-  // Stash the replay start timestamp in currentSpeaker (unused in replay flow) so Firebase rules accept it
-  const upd={status:'replay',currentSpeaker:String(Date.now())};
-  Object.keys(H.data[H.cur]?.players||{}).forEach(n=>{upd[`players/${n}/ready`]=false;});
-  await db.ref(`rooms/${H.cur}`).update(upd);
-}
-async function hDoReplay(){
-  const idx=rnd(PAIRS.length),pair=PAIRS[idx]||PAIRS[0];
-  const upd={status:'lobby',winner:null,lastElim:null,civWord:pair[0],spyWord:pair[1],'config/pairIdx':idx};
-  Object.keys(H.data[H.cur]?.players||{}).forEach(n=>{
-    upd[`players/${n}/role`]=null;upd[`players/${n}/word`]=null;
-    upd[`players/${n}/eliminated`]=false;upd[`players/${n}/vote`]=null;
-    upd[`players/${n}/ready`]=false;
-    upd[`players/${n}/mwGuess`]=null;
-  });
-  await db.ref(`rooms/${H.cur}`).update(upd);
+  const d=H.data[H.cur];if(!d)return;
+  const upd={status:'end',winner:'reveal'};
+  Object.keys(d.players||{}).forEach(n=>{upd[`players/${n}/ready`]=false;});
+  await fbWrite(()=>db.ref(`rooms/${H.cur}`).update(upd));
 }
 
 // ════════════════════════════════════════════
@@ -1518,7 +1398,9 @@ async function cAfterElim(){
   await C.ref.update(upd);
 }
 async function cEndGame(){
-  await C.ref.update({status:'end',winner:'reveal'});
+  const upd={status:'end',winner:'reveal'};
+  Object.keys(C.data?.players||{}).forEach(n=>{upd[`players/${n}/ready`]=false;});
+  await fbWrite(()=>C.ref.update(upd));
 }
 async function cAskReplay(){
   const upd={status:'replay'};
@@ -1723,7 +1605,6 @@ function pRoute(){
     else if(me.vote){rPVoteSent();go('player-vote-sent');}
     else{rPVote();go('player-vote');}
   }
-  else if(st==='replay'){rPReplay(me);go('player-replay');}
   else if(st==='end'){rPEnd();go('player-end');}
 }
 
@@ -1763,18 +1644,6 @@ function prFlip(){
   setTimeout(()=>{document.getElementById('prConfirm').style.display='flex';document.getElementById('prTip').style.display='block';},650);
 }
 async function pConfirmRole(){await db.ref(`rooms/${P.code}/players/${P.name}/ready`).set(true);}
-
-function rPRound(){
-  const d=P.data,ps=d.players||{},cur=d.currentSpeaker;
-  document.getElementById('plrEy').textContent='En cours';
-  document.getElementById('plrTitle').textContent='Discussion 🗣️';
-  const isMe=cur===P.name;
-  document.getElementById('plrInfo').innerHTML=isMe?'🎤 <b>C\'est à toi !</b>':cur?`🎤 <b>${esc(cur)}</b> parle…`:'⏳ En attente…';
-  document.getElementById('plrList').innerHTML=Object.keys(ps).map(n=>{
-    const p=ps[n],isCur=n===cur,isMe=n===P.name;
-    return`<div class="spk ${p.eliminated?'elim':''} ${isCur?'cur':''}"><div class="av">${esc(n[0]).toUpperCase()}</div><div style="flex:1;font-weight:500;font-size:.88rem">${esc(n)}</div>${isCur?'<span class="mic-tag">🎤</span>':''}${isMe&&!isCur?'<span class="you-tag">Toi</span>':''}${p.eliminated?'<span style="font-size:.7rem;color:var(--muted)">☠️</span>':''}</div>`;
-  }).join('');
-}
 
 function rPVote(){
   P.selVote=null;const ps=P.data.players||{};
@@ -1825,64 +1694,13 @@ function rPVoteSent(){
 }
 
 async function pConfirmResults(){
-  await db.ref(`rooms/${P.code}/players/${P.name}/mwGuess`).set('confirmed');
+  await fbWrite(()=>db.ref(`rooms/${P.code}/players/${P.name}/mwGuess`).set('confirmed'));
 }
 
-function rPElim(){
-  const e=P.data.lastElim;if(!e)return;
-  document.getElementById('peAv').textContent=e.name[0].toUpperCase();
-  document.getElementById('peName').textContent=e.name;
-  const[badge,cls,sub]=elimInfo(e,P.data);
-  document.getElementById('peBadge').textContent=badge;document.getElementById('peBadge').className=`badge ${cls}`;
-  document.getElementById('peSub').textContent=sub;
-}
-
-async function mwGuess(){
-  const guess=(document.getElementById('mwIn').value||'').trim();
-  if(!guess){toast('Entre un mot');return;}
-  await db.ref(`rooms/${P.code}/players/${P.name}/mwGuess`).set(guess);
-  go('player-mwwait');
-}
-
-function rPReplay(me){
-  const ready=me?.ready;
-  const ps=P.data?.players||{};
-  const active=Object.keys(ps).filter(n=>ps[n].connected);
-  const total=active.length;
-  const readyCount=active.filter(n=>ps[n].ready).length;
-  document.getElementById('prpChoice').style.display=ready?'none':'flex';
-  document.getElementById('prpDone').style.display=ready?'block':'none';
-  document.getElementById('prpInfo').textContent=`${readyCount}/${total} joueurs ont choisi Rejouer`;
-  // Timer based on status change time (stored in currentSpeaker)
-  const startTime=parseInt(P.data?.currentSpeaker)||Date.now();
-  updatePlayerTimer(startTime);
-}
-let _pTimerInterval=null;
-function updatePlayerTimer(startTime){
-  if(_pTimerInterval)clearInterval(_pTimerInterval);
-  const tick=()=>{
-    const el=document.getElementById('prpTimer');
-    if(!el)return;
-    const elapsed=Math.floor((Date.now()-startTime)/1000);
-    const remaining=Math.max(0,60-elapsed);
-    if(remaining===0){el.textContent='⏱️ Temps écoulé';clearInterval(_pTimerInterval);return;}
-    el.textContent=`⏱️ ${remaining}s`;
-  };
-  tick();
-  _pTimerInterval=setInterval(tick,1000);
-}
+// Player clicks "Rejouer" on the end screen — votes yes. Host's autoAdvance detects
+// when all connected players agree and auto-starts a new round.
 async function pEndReplay(){
-  // Host will handle transition — just set our ready
-  await db.ref(`rooms/${P.code}/players/${P.name}/ready`).set(true);
-}
-async function pDeclineReplay(){
-  // Remove self from room
-  if(!P.code||!P.name)return;
-  await db.ref(`rooms/${P.code}/players/${P.name}`).remove();
-  pReset();
-}
-async function pConfirmReplay(){
-  await db.ref(`rooms/${P.code}/players/${P.name}/ready`).set(true);
+  await fbWrite(()=>db.ref(`rooms/${P.code}/players/${P.name}/ready`).set(true));
 }
 
 function rPEnd(){
