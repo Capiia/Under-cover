@@ -468,7 +468,9 @@
   <div style="font-size:2.2rem">☕</div>
   <p style="font-size:.95rem;font-weight:600" id="pwName">—</p>
   <p style="font-size:.8rem;color:var(--muted);text-align:center;max-width:210px" class="pulse">En attente du lancement…</p>
+  <p style="font-size:.72rem;color:var(--muted);text-align:center" id="pwCode">—</p>
   <div id="pwList" style="width:100%;display:flex;flex-direction:column;gap:.35rem"></div>
+  <button class="btn btn-ghost btn-sm" onclick="pReset()" style="max-width:200px;margin-top:1rem">Quitter la salle</button>
 </div>
 
 <!-- ══════════════ PLAYER: ROLE REVEAL ══════════════ -->
@@ -1605,6 +1607,7 @@ function pRoute(){
 
 function rPWait(){
   document.getElementById('pwName').textContent='👋 '+P.name;
+  document.getElementById('pwCode').textContent='Salle '+P.code;
   const ps=P.data?.players||{};
   document.getElementById('pwList').innerHTML=Object.keys(ps).map(n=>{
     const p=ps[n];return`<div class="lp"><div class="dot ${p.connected?'on':'off'}"></div><span style="font-size:.85rem">${esc(n)}</span>${n===P.name?'<span class="you-tag" style="margin-left:auto">Toi</span>':''}</div>`;
