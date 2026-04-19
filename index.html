@@ -666,12 +666,29 @@ function go(id){
   await loadWords();
   H.gPairIdx=rnd(PAIRS.length);
 
-  // Check player session first (reconnect after refresh)
+  // URL params — new scan takes priority over stale session
+  const urlJoin=new URLSearchParams(location.search).get('join');
+  const urlRooms=new URLSearchParams(location.search).get('rooms');
   const pc=localStorage.getItem('uc_pcode'),pn=localStorage.getItem('uc_pname');
-  if(pc&&pn){P.code=pc;P.name=pn;pListen(pc);return;}
+
+  // If URL has a new join code that differs from stored session → clear session
+  if(urlJoin&&urlJoin.length===4&&pc&&urlJoin.toUpperCase()!==pc.toUpperCase()){
+    localStorage.removeItem('uc_pcode');localStorage.removeItem('uc_pname');
+  }
+  // If URL has a rooms list and stored session code is not in it → clear session
+  if(urlRooms&&pc){
+    const roomCodes=urlRooms.toUpperCase().split(',').filter(c=>/^[A-Z]{4}$/.test(c));
+    if(!roomCodes.includes(pc.toUpperCase())){
+      localStorage.removeItem('uc_pcode');localStorage.removeItem('uc_pname');
+    }
+  }
+
+  // Check player session (reconnect after refresh, only if no conflicting URL)
+  const pc2=localStorage.getItem('uc_pcode'),pn2=localStorage.getItem('uc_pname');
+  if(pc2&&pn2){P.code=pc2;P.name=pn2;pListen(pc2);return;}
 
   // Check URL param ?rooms=A,B,C — show room picker
-  const roomsParam=new URLSearchParams(location.search).get('rooms');
+  const roomsParam=urlRooms;
   if(roomsParam){
     const codes=roomsParam.toUpperCase().split(',').filter(c=>/^[A-Z]{4}$/.test(c));
     if(codes.length>0){
