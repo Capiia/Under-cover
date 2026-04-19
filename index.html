@@ -970,8 +970,6 @@ function hQrRenderOverlay(){
 function hQrNext(){if(AS.qrIndex<AS.created.length-1){AS.qrIndex++;hQrRenderOverlay();}}
 function hQrPrev(){if(AS.qrIndex>0){AS.qrIndex--;hQrRenderOverlay();}}
 function hQrCloseOverlay(){document.getElementById('qrOverlay').style.display='none';}
-  toast(`${created.length} groupe${created.length>1?'s':''} créé${created.length>1?'s':''} !`);
-}
 
 // Init auto-split form when screen opens
 const _origGo=go;
