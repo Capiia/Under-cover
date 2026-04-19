@@ -1600,7 +1600,10 @@ function pRoute(){
   const st=d.status,me=d.players?.[P.name];
   // Player was removed from the room → reset to splash
   if(!me){pReset();return;}
-  // Track status changes for one-time effects (confetti etc.)
+  // On status transition, reset per-round local UI state
+  if(P._lastStatus!==st){
+    if(st==='voting'){P.flipped=false;P.selVote=null;}
+  }
   if(st!=='end')P._lastStatus=st;
 
   if(st==='lobby'){rPWait();go('player-wait');}
@@ -1627,11 +1630,7 @@ function rPWait(){
 }
 
 function rPRole(me){
-  P.flipped=false;
   document.getElementById('prName').textContent=P.name;
-  document.getElementById('prCard').classList.remove('flipped');
-  document.getElementById('prConfirm').style.display='none';
-  document.getElementById('prTip').style.display='none';
   const front=document.getElementById('prFront');front.className='cf cfr';
   if(me.role==='civilian'){
     document.getElementById('prRole').textContent='👥 Civil';
@@ -1646,6 +1645,13 @@ function rPRole(me){
     document.getElementById('prWord').textContent='Aucun mot. Bluff total.';
     document.getElementById('prWord').style.fontSize='.9rem';
   }
+  // Only reset the flip state on first render (prevents Firebase updates from
+  // unflipping cards while other players are still seeing their roles).
+  if(!P.flipped){
+    document.getElementById('prCard').classList.remove('flipped');
+    document.getElementById('prConfirm').style.display='none';
+    document.getElementById('prTip').style.display='none';
+  }
 }
 function prFlip(){
   if(P.flipped)return;P.flipped=true;
@@ -1655,13 +1661,21 @@ function prFlip(){
 async function pConfirmRole(){await db.ref(`rooms/${P.code}/players/${P.name}/ready`).set(true);}
 
 function rPVote(){
-  P.selVote=null;const ps=P.data.players||{};
+  const ps=P.data.players||{};
   const others=Object.keys(ps).filter(n=>n!==P.name&&!ps[n].eliminated);
+  // Preserve user's current selection across re-renders triggered by other players' actions
+  const prevSel=P.selVote;
   document.getElementById('pvList').innerHTML=others.map((n,i)=>`
     <div class="vi" data-pv="${i}" onclick="pvSel(${i})"><div class="av">${esc(n[0]).toUpperCase()}</div><div style="font-weight:600;flex:1;font-size:.92rem">${esc(n)}</div></div>
   `).join('');
-  document.getElementById('pvBtn').disabled=true;
   P._voteOthers=others;
+  if(prevSel&&others.includes(prevSel)){
+    const idx=others.indexOf(prevSel);
+    pvSel(idx);
+  }else{
+    P.selVote=null;
+    document.getElementById('pvBtn').disabled=true;
+  }
 }
 function pvSel(i){
   const n=P._voteOthers[i];if(!n)return;
