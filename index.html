@@ -551,12 +551,16 @@
 </div>
 
 <!-- ══════════════ PLAYER: REPLAY ══════════════ -->
-<div id="player-replay" class="screen scenter" style="gap:1.2rem">
+<div id="player-replay" class="screen scenter" style="gap:1rem">
   <div style="font-size:2.2rem">🔁</div>
   <p style="font-size:1.1rem;font-weight:700">On rejoue ?</p>
-  <p style="font-size:.82rem;color:var(--muted);text-align:center;max-width:240px" id="prpInfo">Appuie sur Rejouer pour confirmer</p>
-  <button class="btn btn-p" id="prpBtn" onclick="pConfirmReplay()" style="max-width:260px">Rejouer ! 🔁</button>
-  <p id="prpDone" style="display:none;font-size:.82rem;color:var(--green);font-weight:600">✓ C'est bon pour toi ! En attente des autres…</p>
+  <p style="font-size:.85rem;color:var(--muted);text-align:center;max-width:260px" id="prpInfo">—</p>
+  <div id="prpChoice" style="display:flex;flex-direction:column;gap:.5rem;width:100%;max-width:260px">
+    <button class="btn btn-p" onclick="pConfirmReplay()">Oui, rejouer 🔁</button>
+    <button class="btn btn-ghost btn-sm" onclick="pDeclineReplay()">Non, quitter</button>
+  </div>
+  <p id="prpDone" style="display:none;font-size:.85rem;color:var(--green);font-weight:600;text-align:center">✓ C'est bon ! En attente des autres…</p>
+  <p id="prpTimer" style="font-size:.85rem;color:var(--muted);font-weight:600">—</p>
 </div>
 
 <!-- ══════════════ PLAYER: END ══════════════ -->
@@ -567,7 +571,10 @@
     <p class="slbl">Récap</p>
     <div id="peReveal" style="display:flex;flex-direction:column;gap:.4rem"></div>
   </div>
-  <div class="sf"><button class="btn btn-ghost" onclick="pReset()">← Retour</button></div>
+  <div class="sf" style="gap:.5rem">
+    <button class="btn btn-p" onclick="pEndReplay()">Rejouer 🔁</button>
+    <button class="btn btn-ghost btn-sm" onclick="pReset()">Quitter</button>
+  </div>
 </div>
 
 </div><!-- #app -->
@@ -1098,14 +1105,29 @@ function renderGroup(){
 
   // ── REPLAY WAIT ──
   if(st==='replay'){
+    const activeNames=names.filter(n=>ps[n].connected);
+    const readyCount=activeNames.filter(n=>ps[n]?.ready).length;
+    const startTime=parseInt(d.currentSpeaker)||Date.now();
+    const elapsed=Math.floor((Date.now()-startTime)/1000);
+    const remaining=Math.max(0,60-elapsed);
+    const allReady=activeNames.length>0&&readyCount===activeNames.length;
+    // Auto-launch when all ready or timer expired
+    if(allReady||remaining===0){
+      if(activeNames.length>=4){hDoReplay();return;}
+      // Not enough ready players — show message
+    }
+    // Schedule re-render for timer update
+    if(!_hReplayInterval){
+      _hReplayInterval=setInterval(()=>{if(H.cur&&H.data[H.cur]?.status==='replay')renderGroup();else{clearInterval(_hReplayInterval);_hReplayInterval=null;}},1000);
+    }
     document.getElementById('hmTitle').textContent='Rejouer ? 🔁';
-    const readyCount=names.filter(n=>ps[n]?.ready).length;
     body.innerHTML=`
-      <div class="info">${readyCount===names.length?'✅ Tout le monde est prêt !':'⏳ '+readyCount+'/'+names.length+' prêts'}</div>
-      <p class="slbl">Joueurs</p>
-      ${names.map(n=>`<div class="lp"><div class="dot ${ps[n]?.ready?'on':'off'}"></div><div class="av sm">${esc(n[0]).toUpperCase()}</div><div style="flex:1;font-size:.88rem">${esc(n)}</div><div style="font-size:.75rem;color:var(--muted)">${ps[n]?.ready?'Prêt ✓':'…'}</div></div>`).join('')}
+      <div class="info">⏱️ ${remaining}s · ${readyCount}/${activeNames.length} ont dit oui</div>
+      <p class="slbl">Joueurs connectés</p>
+      ${activeNames.map(n=>`<div class="lp"><div class="dot ${ps[n]?.ready?'on':'off'}"></div><div class="av sm">${esc(n[0]).toUpperCase()}</div><div style="flex:1;font-size:.88rem">${esc(n)}</div><div style="font-size:.75rem;color:${ps[n]?.ready?'var(--green)':'var(--muted)'}">${ps[n]?.ready?'Oui ✓':'…'}</div></div>`).join('')}
+      ${activeNames.length<4?`<div class="info" style="color:var(--r);margin-top:.6rem">Min 4 joueurs connectés pour relancer</div>`:''}
     `;
-    foot.innerHTML=`<button class="btn btn-p" onclick="hDoReplay()" ${readyCount===names.length?'':'disabled'}>Relancer ! 🚀</button><button class="btn btn-ghost btn-sm" onclick="goHostDash()">← Mes groupes</button>`;
+    foot.innerHTML=`<button class="btn btn-p" onclick="hDoReplay()" ${activeNames.length<4?'disabled':''}>Relancer maintenant 🚀</button><button class="btn btn-ghost btn-sm" onclick="goHostDash()">← Mes groupes</button>`;
     return;
   }
 
@@ -1118,10 +1140,11 @@ function renderGroup(){
       <p class="slbl">Récap</p>
       ${revealHTML(ps,d)}
     `;
-    foot.innerHTML=`<button class="btn btn-p" onclick="hAskReplay()">Proposer Rejouer 🔁</button><button class="btn btn-ghost btn-sm" onclick="goHostDash()">← Mes groupes</button><button class="btn btn-r btn-sm" onclick="hDeleteGroup()" style="align-self:center">Supprimer</button>`;
+    foot.innerHTML=`<button class="btn btn-p" onclick="hAskReplay()">Rejouer 🔁</button><button class="btn btn-ghost btn-sm" onclick="goHostDash()">← Mes groupes</button><button class="btn btn-r btn-sm" onclick="hDeleteGroup()" style="align-self:center">Supprimer</button>`;
     return;
   }
 }
+let _hReplayInterval=null;
 
 // Host group actions — hostToken is only set at room creation (immutable in Firebase rules)
 async function hRemovePlayer(n){
@@ -1178,7 +1201,8 @@ async function hEndGroup(){
   await db.ref(`rooms/${H.cur}`).update({status:'end',winner:'reveal'});
 }
 async function hAskReplay(){
-  const upd={status:'replay'};
+  // Stash the replay start timestamp in currentSpeaker (unused in replay flow) so Firebase rules accept it
+  const upd={status:'replay',currentSpeaker:String(Date.now())};
   Object.keys(H.data[H.cur]?.players||{}).forEach(n=>{upd[`players/${n}/ready`]=false;});
   await db.ref(`rooms/${H.cur}`).update(upd);
 }
@@ -1724,14 +1748,40 @@ async function mwGuess(){
 
 function rPReplay(me){
   const ready=me?.ready;
-  document.getElementById('prpBtn').style.display=ready?'none':'flex';
-  document.getElementById('prpDone').style.display=ready?'block':'none';
   const ps=P.data?.players||{};
-  const total=Object.keys(ps).length;
-  const readyCount=Object.values(ps).filter(p=>p.ready).length;
-  document.getElementById('prpInfo').textContent=ready
-    ?`${readyCount}/${total} prêts — en attente des autres…`
-    :'Appuie pour confirmer';
+  const active=Object.keys(ps).filter(n=>ps[n].connected);
+  const total=active.length;
+  const readyCount=active.filter(n=>ps[n].ready).length;
+  document.getElementById('prpChoice').style.display=ready?'none':'flex';
+  document.getElementById('prpDone').style.display=ready?'block':'none';
+  document.getElementById('prpInfo').textContent=`${readyCount}/${total} joueurs ont choisi Rejouer`;
+  // Timer based on status change time (stored in currentSpeaker)
+  const startTime=parseInt(P.data?.currentSpeaker)||Date.now();
+  updatePlayerTimer(startTime);
+}
+let _pTimerInterval=null;
+function updatePlayerTimer(startTime){
+  if(_pTimerInterval)clearInterval(_pTimerInterval);
+  const tick=()=>{
+    const el=document.getElementById('prpTimer');
+    if(!el)return;
+    const elapsed=Math.floor((Date.now()-startTime)/1000);
+    const remaining=Math.max(0,60-elapsed);
+    if(remaining===0){el.textContent='⏱️ Temps écoulé';clearInterval(_pTimerInterval);return;}
+    el.textContent=`⏱️ ${remaining}s`;
+  };
+  tick();
+  _pTimerInterval=setInterval(tick,1000);
+}
+async function pEndReplay(){
+  // Host will handle transition — just set our ready
+  await db.ref(`rooms/${P.code}/players/${P.name}/ready`).set(true);
+}
+async function pDeclineReplay(){
+  // Remove self from room
+  if(!P.code||!P.name)return;
+  await db.ref(`rooms/${P.code}/players/${P.name}`).remove();
+  pReset();
 }
 async function pConfirmReplay(){
   await db.ref(`rooms/${P.code}/players/${P.name}/ready`).set(true);
