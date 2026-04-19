@@ -1033,12 +1033,12 @@ function renderGroup(){
     const whoVotedFor={};
     active.forEach(n=>{const v=ps[n]?.vote;if(v){counts[v]=(counts[v]||0)+1;whoVotedFor[n]=v;}});
     const voted=active.filter(n=>ps[n]?.vote).length;
-    const allVoted=voted===active.length;
+    const allVoted=active.length>0&&voted===active.length;
     const confirmed=active.filter(n=>ps[n]?.mwGuess==='confirmed').length;
     const allConfirmed=allVoted&&confirmed===active.length;
 
-    // Auto-transition to end when all confirmed
-    if(allConfirmed){
+    // Auto-transition to end when all confirmed (only if at least 1 active player)
+    if(allConfirmed&&active.length>0){
       db.ref(`rooms/${code}`).update({status:'end',winner:'reveal'});
       return;
     }
@@ -1126,6 +1126,7 @@ async function hStartGroup(){
     else if(cfg.mw&&i===cfg.uc){role='mrwhite';word=null;}
     upd[`players/${n}/role`]=role;upd[`players/${n}/word`]=word||null;
     upd[`players/${n}/ready`]=false;upd[`players/${n}/vote`]=null;upd[`players/${n}/eliminated`]=false;
+    upd[`players/${n}/mwGuess`]=null;
   });
   upd.status='voting';upd.currentSpeaker=null;upd.winner=null;upd.lastElim=null;
   await db.ref(`rooms/${code}`).update(upd);
@@ -1169,6 +1170,7 @@ async function hDoReplay(){
     upd[`players/${n}/role`]=null;upd[`players/${n}/word`]=null;
     upd[`players/${n}/eliminated`]=false;upd[`players/${n}/vote`]=null;
     upd[`players/${n}/ready`]=false;
+    upd[`players/${n}/mwGuess`]=null;
   });
   await db.ref(`rooms/${H.cur}`).update(upd);
 }
@@ -1291,6 +1293,7 @@ async function csStart(){
     else if(cfg.mw&&i===cfg.uc){role='mrwhite';word=null;}
     upd[`players/${n}/role`]=role;upd[`players/${n}/word`]=word||null;
     upd[`players/${n}/ready`]=false;upd[`players/${n}/vote`]=null;upd[`players/${n}/eliminated`]=false;
+    upd[`players/${n}/mwGuess`]=null;
   });
   upd.status='voting';upd.round=1;upd.currentSpeaker=null;upd.winner=null;upd.lastElim=null;
   await db.ref(`rooms/${C.code}`).update(upd);
@@ -1390,6 +1393,7 @@ async function cDoReplay(){
     upd[`players/${n}/role`]=null;upd[`players/${n}/word`]=null;
     upd[`players/${n}/eliminated`]=false;upd[`players/${n}/vote`]=null;
     upd[`players/${n}/ready`]=false;
+    upd[`players/${n}/mwGuess`]=null;
   });
   await C.ref.update(upd);
 }
