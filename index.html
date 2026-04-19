@@ -1589,7 +1589,9 @@ function pListen(code){
 }
 function pRoute(){
   const d=P.data;if(!d)return;
-  const st=d.status,me=d.players?.[P.name];if(!me)return;
+  const st=d.status,me=d.players?.[P.name];
+  // Player was removed from the room → reset to splash
+  if(!me){pReset();return;}
 
   if(st==='lobby'){rPWait();go('player-wait');}
   else if(st==='voting'){
