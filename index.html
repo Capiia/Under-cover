@@ -1496,7 +1496,6 @@ async function jLookup(){
     localStorage.setItem('uc_pcode',code);
     pListen(code);return;
   }
-  if(d.status==='end'){toast('Partie terminée');return;}
   P.code=code;
 
   if(d.openJoin){
@@ -1750,6 +1749,7 @@ function rPEnd(){
 }
 
 function pReset(){
+  if(P.code&&P.name)db.ref(`rooms/${P.code}/players/${P.name}/connected`).set(false).catch(()=>{});
   if(P.unsub&&P.ref)P.ref.off('value',P.unsub);
   localStorage.removeItem('uc_pcode');localStorage.removeItem('uc_pname');
   P={code:null,name:null,ref:null,unsub:null,data:null,flipped:false,selVote:null};
